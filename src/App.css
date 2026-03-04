@@ -1,0 +1,552 @@
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background-color: #1e1e1e;
+}
+
+#root {
+  height: 100%;
+}
+
+.page {
+  min-height: 100%;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.page-title {
+  color: #ffffff;
+  margin: 0 0 18px 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+/* =========================
+   Layout (4 columnas)
+   1) panel texto
+   2) sliders
+   3) assets (arte + rareza + export/import)
+   4) preview
+========================= */
+.layout {
+  display: grid;
+  grid-template-columns: 320px 260px 320px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+/* =========================
+   Panel principal (texto)
+========================= */
+.panel {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: #ffffff;
+  font-size: 12px;
+}
+
+.field input,
+.field textarea {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #444;
+  background: #141414;
+  color: #fff;
+  outline: none;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: #777;
+}
+
+/* =========================
+   Sliders panel
+========================= */
+.sliders-panel {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.sliders {
+  margin-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: white;
+  font-size: 12px;
+}
+
+.slider input[type="range"] {
+  width: 100%;
+}
+
+/* =========================
+   Columna Assets (arte + rareza + export)
+========================= */
+.assets-panel {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.assets-title {
+  color: #fff;
+  font-size: 12px;
+  margin: 0 0 10px 0;
+  opacity: 0.9;
+}
+
+/* Botón */
+.btn {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid #444;
+  background: #141414;
+  color: #fff;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: #00ff88;
+}
+
+/* ✅ fila de exportación */
+.export-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* =========================
+   Selector de Rareza
+========================= */
+.rarity-selector {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #3a3a3a;
+}
+
+.rarity-title {
+  color: #fff;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.rarity-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rarity-item {
+  border: 1px solid #333;
+  background: #161616;
+  border-radius: 12px;
+  padding: 8px;
+  cursor: pointer;
+  color: #fff;
+  text-align: center;
+}
+
+.rarity-item:hover {
+  border-color: #00ff88;
+}
+
+.rarity-item.active {
+  border-color: #00ff88;
+  box-shadow: 0 0 0 1px rgba(0,255,136,0.35);
+}
+
+.rarity-thumb {
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.rarity-label {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+/* =========================
+   Vista previa
+========================= */
+.preview-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 8px;
+}
+
+/* Carta */
+.card {
+  position: relative;
+  width: 606px;
+  height: 1039px;
+  background: #111;
+  border-radius: 20px;
+  overflow: hidden;
+  transform: scale(0.45);
+  transform-origin: top center;
+}
+
+/* Arte */
+.art {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 12px;
+  z-index: 1;
+}
+
+.art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Marco */
+.frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* =========================
+   Cajas de texto
+========================= */
+
+/* ✅ Título SIN fondo “plomo” */
+.title-box {
+  position: absolute;
+  left: 60px;
+  right: 60px;
+  text-align: center;
+  z-index: 10;
+
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+
+  max-height: 110px;
+  overflow: hidden;
+}
+
+/* La descripción sí mantiene caja */
+.desc-box {
+  position: absolute;
+  left: 60px;
+  right: 60px;
+  text-align: center;
+  z-index: 10;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+  max-height: 620px;
+  overflow: hidden;
+}
+
+/* Título estilo hacker */
+.card-title {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.05;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  text-shadow:
+    0 0 6px currentColor,
+    0 0 12px currentColor,
+    0 0 20px currentColor;
+}
+
+/* Descripción estilo hacker */
+.card-description {
+  font-size: 20px;
+  margin: 0;
+  color: #b6fff0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  text-shadow: 0 0 10px rgba(0, 255, 180, 0.25);
+}
+
+/* ✅ Imágenes dentro de la descripción (preview carta) */
+.card-description img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 8px auto;
+  border-radius: 10px;
+}
+
+/* ✅ Si en el HTML vienen <p>, reduce márgenes */
+.card-description p {
+  margin: 6px 0;
+}
+
+/* =========================
+   Responsive
+========================= */
+@media (max-width: 1400px) {
+  /* 3 columnas: panel | sliders | preview
+     assets baja debajo en ancho medio */
+  .layout {
+    grid-template-columns: 320px 260px 1fr;
+  }
+
+  .assets-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1100px) {
+  /* 2 columnas: panel | preview
+     sliders y assets ocupan fila completa */
+  .layout {
+    grid-template-columns: 320px 1fr;
+  }
+
+  .sliders-panel,
+  .assets-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 800px) {
+  /* 1 columna */
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-wrap {
+    justify-content: flex-start;
+  }
+
+  .rarity-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* =========================
+   Editor rico (Tiptap)
+========================= */
+.rt-wrap {
+  border: 1px solid #444;
+  border-radius: 10px;
+  background: #141414;
+  overflow: hidden;
+}
+
+.rt-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #101010;
+}
+
+.rt-btn {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid #333;
+  background: #161616;
+  color: #fff;
+  cursor: pointer;
+}
+
+.rt-btn:hover {
+  border-color: #00ff88;
+}
+
+.rt-btn.is-on {
+  border-color: #00ff88;
+}
+
+.rt-sep {
+  width: 1px;
+  background: #2a2a2a;
+  margin: 0 6px;
+}
+
+.rt-editor {
+  padding: 10px;
+  color: #fff;
+}
+
+.rt-editor .ProseMirror {
+  outline: none;
+  min-height: 140px;
+}
+
+/* ===== Ecuación inline ===== */
+.math-inline-node {
+  border-radius: 8px;
+  padding: 2px 6px;
+  background: rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  display: inline-block;
+}
+
+.math-inline-node .katex {
+  font-size: 1em;
+}
+
+/* ===== Modal MathLive ===== */
+.math-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+  pointer-events: none;
+}
+
+.math-modal {
+  position: relative;
+  width: min(720px, 92vw);
+  background: #121212;
+  border: 1px solid #333;
+  border-radius: 14px;
+  padding: 12px;
+  color: #fff;
+  z-index: 9001;
+  pointer-events: auto;
+}
+
+.math-modal-title {
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.mathfield-host {
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 10px;
+  background: #0b0b0b;
+}
+
+.math-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.math-hint {
+  margin-top: 10px;
+  color: #bdbdbd;
+  font-size: 12px;
+}
+
+math-virtual-keyboard,
+.ML__keyboard,
+.ML__virtual-keyboard {
+  z-index: 10000 !important;
+  pointer-events: auto !important;
+}
+
+.math-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: 1px solid #333;
+  background: #161616;
+  color: #fff;
+  border-radius: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+/* =========================================================
+   IMÁGENES REDIMENSIONABLES EN EL EDITOR (modo pro)
+========================================================= */
+
+.rt-img-wrap {
+  display: inline-flex;
+  position: relative;
+  margin: 10px 10px 10px 0;
+  vertical-align: top;
+}
+
+.rt-img-inner {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.rt-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid #2a2a2a;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* borde cuando está seleccionada */
+.rt-img-wrap.is-selected .rt-img {
+  outline: 2px solid #00ff88;
+  outline-offset: 2px;
+}
+
+/* handle de resize */
+.rt-img-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #00ff88;
+  border-radius: 50%;
+  border: 2px solid #0a0a0a;
+  cursor: nwse-resize;
+}
+
+/* esquina inferior derecha */
+.rt-img-handle.br {
+  right: -7px;
+  bottom: -7px;
+}
+
+/* permite dos imágenes por línea */
+.rt-img-wrap {
+  max-width: 100%;
+}
+
+.rt-img-inner {
+  max-width: 520px;
+}
