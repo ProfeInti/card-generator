@@ -1,4 +1,4 @@
-import { NodeViewWrapper } from '@tiptap/react'
+﻿import { NodeViewWrapper } from '@tiptap/react'
 import { useEffect, useRef, useState } from 'react'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
@@ -104,7 +104,7 @@ export default function MathInlineView({ node, updateAttributes }) {
       <NodeViewWrapper
         as="span"
         className="math-inline-node"
-        title="Click para editar f\u00f3rmula"
+        title="Click to edit formula"
         onMouseDown={(e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -154,12 +154,12 @@ export default function MathInlineView({ node, updateAttributes }) {
                 e.stopPropagation()
                 closeModal(false)
               }}
-              aria-label="Cerrar"
+              aria-label="Close"
             >
               X
             </button>
 
-            <div className="math-modal-title">Editar f\u00f3rmula</div>
+            <div className="math-modal-title">Edit formula</div>
 
             <div
               ref={mfHostRef}
@@ -188,7 +188,7 @@ export default function MathInlineView({ node, updateAttributes }) {
                   closeModal(true)
                 }}
               >
-                Guardar
+                Save
               </button>
 
               <button
@@ -204,14 +204,15 @@ export default function MathInlineView({ node, updateAttributes }) {
                   closeModal(false)
                 }}
               >
-                Cancelar
+                Cancel
               </button>
             </div>
 
-            <div className="math-hint">Tip: usa la botonera MathLive. Escape cierra el editor.</div>
+            <div className="math-hint">Tip: use the MathLive keypad. Escape closes the editor.</div>
           </div>
         </div>
       )}
     </>
   )
 }
+

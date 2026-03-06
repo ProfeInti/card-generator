@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -31,7 +31,7 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
 
   const insertImageByUrl = () => {
     if (!editor) return
-    const url = window.prompt('Pega la URL de la imagen:')
+    const url = window.prompt('Paste the image URL:')
     if (!url) return
     editor.chain().focus().setImage({ src: url }).run()
   }
@@ -105,9 +105,9 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
           className="rt-btn"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => editor.chain().focus().unsetColor().run()}
-          title="Quitar color"
+          title="Clear color"
         >
-          Quitar color
+          Clear color
         </button>
 
         <div className="rt-sep" />
@@ -117,7 +117,7 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
           className="rt-btn"
           onMouseDown={(e) => e.preventDefault()}
           onClick={insertImageByUrl}
-          title="Insertar imagen por URL"
+          title="Insert image by URL"
         >
           Img URL
         </button>
@@ -127,9 +127,9 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
           className="rt-btn"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => fileInputRef.current?.click()}
-          title="Subir imagen desde tu PC"
+          title="Upload image from your computer"
         >
-          Subir Img
+          Upload Img
         </button>
 
         <input
@@ -183,7 +183,7 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
           &int;
         </button>
 
-        <div className="rt-hint">Tip: click en imagen - marco + arrastrar esquina. Hasta 2 imagenes por linea.</div>
+        <div className="rt-hint">Tip: click image - select frame and drag corner. Up to 2 images per row.</div>
       </div>
 
       <div
@@ -198,3 +198,4 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
     </div>
   )
 }
+

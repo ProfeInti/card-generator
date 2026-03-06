@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "node server/index.js",
+    "dev:full": "concurrently \"npm run dev:api\" \"npm run dev\"",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -16,7 +18,12 @@
     "@tiptap/extension-underline": "^3.20.0",
     "@tiptap/react": "^3.20.0",
     "@tiptap/starter-kit": "^3.20.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
     "html-to-image": "^1.11.13",
+    "jsonwebtoken": "^9.0.2",
     "jspdf": "^4.2.0",
     "katex": "^0.16.33",
     "mathlive": "^0.108.3",
@@ -28,6 +35,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.2.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
@@ -35,3 +43,4 @@
     "vite": "^7.3.1"
   }
 }
+
