@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+﻿import { useMemo, useRef, useState } from 'react'
 import './App.css'
 
-// ✅ 5 marcos (rareza) — pon estos archivos en /src/assets/
 import frameCommon from './assets/frame-common.png'
 import frameRare from './assets/frame-rare.png'
 import frameEpic from './assets/frame-epic.png'
@@ -16,67 +15,97 @@ import katex from 'katex'
 import * as htmlToImage from 'html-to-image'
 import jsPDF from 'jspdf'
 
+const FONT_OPTIONS = [
+  {
+    value: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace',
+    label: 'Monospace',
+  },
+  { value: '"Trebuchet MS", "Segoe UI", sans-serif', label: 'Trebuchet' },
+  { value: '"Georgia", "Times New Roman", serif', label: 'Serif' },
+  { value: '"Verdana", "Geneva", sans-serif', label: 'Verdana' },
+  { value: '"Tahoma", "Geneva", sans-serif', label: 'Tahoma' },
+]
+
+const DEFAULTS = {
+  titleFontSize: 34,
+  descFontSize: 20,
+  artTop: 140,
+  artLeft: 70,
+  artWidth: 466,
+  artHeight: 320,
+  titleTop: 60,
+  descTop: 690,
+}
+
+function toNumber(v, fallback) {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function decodeUnicodeEscapes(text) {
+  if (typeof text !== 'string') return text
+  return text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+    String.fromCharCode(parseInt(hex, 16))
+  )
+}
+
+function renderDescriptionMath(html) {
+  if (typeof window === 'undefined') return html
+
+  const parser = new window.DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+
+  const nodes = doc.querySelectorAll('span[data-type="math-inline"]')
+  nodes.forEach((el) => {
+    const latex = el.getAttribute('data-latex') || ''
+    try {
+      el.innerHTML = katex.renderToString(latex, { throwOnError: false })
+    } catch {
+      el.textContent = latex
+    }
+  })
+
+  return doc.body.innerHTML
+}
+
 function App() {
   const frames = [
-    { id: 'common', label: 'Común', src: frameCommon },
+    { id: 'common', label: 'Com\u00fan', src: frameCommon },
     { id: 'rare', label: 'Rara', src: frameRare },
-    { id: 'epic', label: 'Épica', src: frameEpic },
+    { id: 'epic', label: '\u00c9pica', src: frameEpic },
     { id: 'legendary', label: 'Legendaria', src: frameLegendary },
-    { id: 'mythic', label: 'Mítica', src: frameMythic },
+    { id: 'mythic', label: 'M\u00edtica', src: frameMythic },
   ]
 
   const [title, setTitle] = useState('Nombre de la Carta')
   const [titleColor, setTitleColor] = useState('#00ff88')
+  const [titleFontFamily, setTitleFontFamily] = useState(FONT_OPTIONS[0].value)
+  const [titleFontSize, setTitleFontSize] = useState(DEFAULTS.titleFontSize)
 
-  // description es HTML
   const [description, setDescription] = useState(
-    '<p><span style="color:#b6fff0">Esta es la descripción de la carta.</span></p>'
+    '<p><span style="color:#b6fff0">Esta es la descripci\u00f3n de la carta.</span></p>'
   )
+  const [descFontFamily, setDescFontFamily] = useState(FONT_OPTIONS[0].value)
+  const [descFontSize, setDescFontSize] = useState(DEFAULTS.descFontSize)
 
   const [imageUrl, setImageUrl] = useState('https://via.placeholder.com/300x200')
 
-  // ✅ Marco (rareza)
   const [frameId, setFrameId] = useState('common')
   const frame = frames.find((f) => f.id === frameId)?.src ?? frameCommon
 
-  // Zona del arte (hueco del marco)
-  const [artTop, setArtTop] = useState(140)
-  const [artLeft, setArtLeft] = useState(70)
-  const [artWidth, setArtWidth] = useState(466)
-  const [artHeight, setArtHeight] = useState(320)
+  const [artTop, setArtTop] = useState(DEFAULTS.artTop)
+  const [artLeft, setArtLeft] = useState(DEFAULTS.artLeft)
+  const [artWidth, setArtWidth] = useState(DEFAULTS.artWidth)
+  const [artHeight, setArtHeight] = useState(DEFAULTS.artHeight)
 
-  // Zonas separadas: título arriba, descripción abajo
-  const [titleTop, setTitleTop] = useState(60)
-  const [descTop, setDescTop] = useState(690)
+  const [titleTop, setTitleTop] = useState(DEFAULTS.titleTop)
+  const [descTop, setDescTop] = useState(DEFAULTS.descTop)
 
-  // Ref para render KaTeX en la vista previa
-  const descRenderRef = useRef(null)
-
-  // Ref para exportar captura de la carta
   const cardRef = useRef(null)
-
-  // input oculto para Import JSON
   const importRef = useRef(null)
 
-  // Renderiza KaTeX en la carta para spans de ecuación guardados como data-latex
-  useEffect(() => {
-    const root = descRenderRef.current
-    if (!root) return
+  const renderedDescription = useMemo(() => renderDescriptionMath(description), [description])
 
-    const nodes = root.querySelectorAll('span[data-type="math-inline"]')
-    nodes.forEach((el) => {
-      const latex = el.getAttribute('data-latex') || ''
-      try {
-        el.innerHTML = katex.renderToString(latex, { throwOnError: false })
-      } catch {
-        el.textContent = latex
-      }
-    })
-  }, [description])
-
-  // =========================
-  // Export / Import helpers
-  // =========================
   const downloadBlob = (blob, filename) => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -92,7 +121,11 @@ function App() {
     version: 1,
     title,
     titleColor,
+    titleFontFamily,
+    titleFontSize,
     description,
+    descFontFamily,
+    descFontSize,
     imageUrl,
     frameId,
     artTop,
@@ -104,40 +137,39 @@ function App() {
   })
 
   const applyCardState = (data) => {
-    // tolerante por si faltan keys
     if (typeof data !== 'object' || !data) return
 
-    if (typeof data.title === 'string') setTitle(data.title)
+    if (typeof data.title === 'string') setTitle(decodeUnicodeEscapes(data.title))
     if (typeof data.titleColor === 'string') setTitleColor(data.titleColor)
-    if (typeof data.description === 'string') setDescription(data.description)
-    if (typeof data.imageUrl === 'string') setImageUrl(data.imageUrl)
+    if (typeof data.titleFontFamily === 'string') setTitleFontFamily(data.titleFontFamily)
+    setTitleFontSize(toNumber(data.titleFontSize, DEFAULTS.titleFontSize))
 
-    if (typeof data.frameId === 'string' && frames.some(f => f.id === data.frameId)) {
+    if (typeof data.description === 'string') {
+      setDescription(decodeUnicodeEscapes(data.description))
+    }
+    if (typeof data.descFontFamily === 'string') setDescFontFamily(data.descFontFamily)
+    setDescFontSize(toNumber(data.descFontSize, DEFAULTS.descFontSize))
+
+    if (typeof data.imageUrl === 'string') setImageUrl(decodeUnicodeEscapes(data.imageUrl))
+
+    if (typeof data.frameId === 'string' && frames.some((f) => f.id === data.frameId)) {
       setFrameId(data.frameId)
     }
 
-    const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
-
-    setArtTop(num(data.artTop, 140))
-    setArtLeft(num(data.artLeft, 70))
-    setArtWidth(num(data.artWidth, 466))
-    setArtHeight(num(data.artHeight, 320))
-    setTitleTop(num(data.titleTop, 60))
-    setDescTop(num(data.descTop, 690))
+    setArtTop(toNumber(data.artTop, DEFAULTS.artTop))
+    setArtLeft(toNumber(data.artLeft, DEFAULTS.artLeft))
+    setArtWidth(toNumber(data.artWidth, DEFAULTS.artWidth))
+    setArtHeight(toNumber(data.artHeight, DEFAULTS.artHeight))
+    setTitleTop(toNumber(data.titleTop, DEFAULTS.titleTop))
+    setDescTop(toNumber(data.descTop, DEFAULTS.descTop))
   }
 
-  // =========================
-  // Export JSON
-  // =========================
   const exportJSON = () => {
     const data = getCardState()
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     downloadBlob(blob, 'carta.json')
   }
 
-  // =========================
-  // Import JSON
-  // =========================
   const triggerImport = () => importRef.current?.click()
 
   const onImportFile = async (e) => {
@@ -150,20 +182,15 @@ function App() {
       const data = JSON.parse(text)
       applyCardState(data)
     } catch (err) {
-      alert('JSON inválido o archivo dañado.')
+      alert('JSON inv\u00e1lido o archivo da\u00f1ado.')
       console.error(err)
     }
   }
 
-  // =========================
-  // Export PNG (captura exacta)
-  // =========================
   const exportPNG = async () => {
     const el = cardRef.current
     if (!el) return
 
-    // la carta tiene transform: scale(...) por CSS
-    // para export, la quitamos temporalmente
     const prevTransform = el.style.transform
     const prevOrigin = el.style.transformOrigin
 
@@ -188,9 +215,6 @@ function App() {
     }
   }
 
-  // =========================
-  // Export PDF
-  // =========================
   const exportPDF = async () => {
     const el = cardRef.current
     if (!el) return
@@ -207,8 +231,6 @@ function App() {
         cacheBust: true,
       })
 
-      // La carta “real” es 606x1039 px (tu diseño)
-      // La metemos en una hoja tamaño ajustado
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'px',
@@ -228,15 +250,12 @@ function App() {
 
   return (
     <div className="page">
-      <h1 className="page-title">Generador de Cartas — Profe Inti</h1>
+      <h1 className="page-title">Generador de Cartas - Profe Inti</h1>
 
       <div className="layout">
-        {/* =======================
-            PANEL TEXTO
-        ======================= */}
         <div className="panel">
           <label className="field">
-            <span>Nombre (Título)</span>
+            <span>{'Nombre (T\u00edtulo)'}</span>
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -245,7 +264,7 @@ function App() {
           </label>
 
           <label className="field">
-            <span>Color del título</span>
+            <span>{'Color del t\u00edtulo'}</span>
             <input
               type="color"
               value={titleColor}
@@ -254,14 +273,60 @@ function App() {
           </label>
 
           <label className="field">
-            <span>Descripción (enriquecida)</span>
-            <DescriptionEditor value={description} onChange={setDescription} />
+            <span>{'Fuente del t\u00edtulo'}</span>
+            <select value={titleFontFamily} onChange={(e) => setTitleFontFamily(e.target.value)}>
+              {FONT_OPTIONS.map((font) => (
+                <option key={font.label} value={font.value}>
+                  {font.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span>{'Tama\u00f1o del t\u00edtulo (px)'}</span>
+            <input
+              type="number"
+              min="16"
+              max="72"
+              value={titleFontSize}
+              onChange={(e) => setTitleFontSize(toNumber(e.target.value, DEFAULTS.titleFontSize))}
+            />
+          </label>
+
+          <label className="field">
+            <span>{'Fuente de la descripci\u00f3n'}</span>
+            <select value={descFontFamily} onChange={(e) => setDescFontFamily(e.target.value)}>
+              {FONT_OPTIONS.map((font) => (
+                <option key={font.label} value={font.value}>
+                  {font.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span>{'Tama\u00f1o de la descripci\u00f3n (px)'}</span>
+            <input
+              type="number"
+              min="12"
+              max="48"
+              value={descFontSize}
+              onChange={(e) => setDescFontSize(toNumber(e.target.value, DEFAULTS.descFontSize))}
+            />
+          </label>
+
+          <label className="field">
+            <span>{'Descripci\u00f3n (enriquecida)'}</span>
+            <DescriptionEditor
+              value={description}
+              onChange={setDescription}
+              baseFontFamily={descFontFamily}
+              baseFontSize={descFontSize}
+            />
           </label>
         </div>
 
-        {/* =======================
-            SLIDERS
-        ======================= */}
         <div className="sliders-panel">
           <div className="sliders">
             <div className="slider">
@@ -309,7 +374,7 @@ function App() {
             </div>
 
             <div className="slider">
-              <span>Título top: {titleTop}px</span>
+              <span>{`T\u00edtulo top: ${titleTop}px`}</span>
               <input
                 type="range"
                 min="0"
@@ -320,7 +385,7 @@ function App() {
             </div>
 
             <div className="slider">
-              <span>Descripción top: {descTop}px</span>
+              <span>{`Descripci\u00f3n top: ${descTop}px`}</span>
               <input
                 type="range"
                 min="350"
@@ -334,12 +399,12 @@ function App() {
               type="button"
               className="btn"
               onClick={() => {
-                setTitleTop(60)
-                setDescTop(690)
-                setArtTop(140)
-                setArtLeft(70)
-                setArtWidth(466)
-                setArtHeight(320)
+                setTitleTop(DEFAULTS.titleTop)
+                setDescTop(DEFAULTS.descTop)
+                setArtTop(DEFAULTS.artTop)
+                setArtLeft(DEFAULTS.artLeft)
+                setArtWidth(DEFAULTS.artWidth)
+                setArtHeight(DEFAULTS.artHeight)
               }}
             >
               Reset posiciones
@@ -347,9 +412,6 @@ function App() {
           </div>
         </div>
 
-        {/* =======================
-            ASSETS (Arte + Rareza + Export/Import)
-        ======================= */}
         <div className="assets-panel">
           <div className="assets-title">Assets</div>
 
@@ -388,13 +450,20 @@ function App() {
             </div>
           </div>
 
-          {/* EXPORT / IMPORT */}
           <div className="export-row">
-            <button type="button" className="btn" onClick={exportPNG}>Export PNG</button>
-            <button type="button" className="btn" onClick={exportPDF}>Export PDF</button>
-            <button type="button" className="btn" onClick={exportJSON}>Export JSON</button>
+            <button type="button" className="btn" onClick={exportPNG}>
+              Export PNG
+            </button>
+            <button type="button" className="btn" onClick={exportPDF}>
+              Export PDF
+            </button>
+            <button type="button" className="btn" onClick={exportJSON}>
+              Export JSON
+            </button>
 
-            <button type="button" className="btn" onClick={triggerImport}>Import JSON</button>
+            <button type="button" className="btn" onClick={triggerImport}>
+              Import JSON
+            </button>
             <input
               ref={importRef}
               type="file"
@@ -405,12 +474,8 @@ function App() {
           </div>
         </div>
 
-        {/* =======================
-            PREVIEW
-        ======================= */}
         <div className="preview-wrap">
           <div className="card" ref={cardRef}>
-            {/* ARTE en el hueco */}
             <div
               className="art"
               style={{
@@ -424,22 +489,29 @@ function App() {
               <img src={imageUrl} alt="Arte" />
             </div>
 
-            {/* MARCO dinámico */}
             <img className="frame" src={frame} alt="Marco" />
 
-            {/* TÍTULO */}
             <div className="title-box" style={{ top: titleTop }}>
-              <h2 className="card-title" style={{ color: titleColor }}>
+              <h2
+                className="card-title"
+                style={{
+                  color: titleColor,
+                  fontFamily: titleFontFamily,
+                  fontSize: `${titleFontSize}px`,
+                }}
+              >
                 {title}
               </h2>
             </div>
 
-            {/* DESCRIPCIÓN */}
             <div className="desc-box" style={{ top: descTop }}>
               <div
                 className="card-description"
-                ref={descRenderRef}
-                dangerouslySetInnerHTML={{ __html: description }}
+                style={{
+                  fontFamily: descFontFamily,
+                  fontSize: `${descFontSize}px`,
+                }}
+                dangerouslySetInnerHTML={{ __html: renderedDescription }}
               />
             </div>
           </div>
