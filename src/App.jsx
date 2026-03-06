@@ -1,4 +1,4 @@
-﻿
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
@@ -15,9 +15,7 @@ import katex from 'katex'
 
 import * as htmlToImage from 'html-to-image'
 import jsPDF from 'jspdf'
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
-const SESSION_KEY = 'card_generator_session_v3'
+import { supabase } from './lib/supabase'
 
 const FONT_OPTIONS = [
   {
@@ -85,70 +83,77 @@ function renderDescriptionMath(html) {
   return doc.body.innerHTML
 }
 
-function getStoredSession() {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (!parsed?.token || !parsed?.username) return null
-    return parsed
-  } catch {
-    return null
-  }
-}
+function toCardResponse(row) {
+  let state = {}
 
-function saveStoredSession(session) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session))
-}
-
-function clearStoredSession() {
-  localStorage.removeItem(SESSION_KEY)
-}
-
-async function apiRequest(path, { method = 'GET', token, body } = {}) {
-  const headers = { 'Content-Type': 'application/json' }
-  if (token) headers.Authorization = `Bearer ${token}`
-
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  })
-
-  const text = await res.text()
-  let payload = null
-  if (text) {
+  if (row?.state_json && typeof row.state_json === 'object') {
+    state = row.state_json
+  } else if (typeof row?.state_json === 'string') {
     try {
-      payload = JSON.parse(text)
+      state = JSON.parse(row.state_json)
     } catch {
-      payload = { error: text }
+      state = {}
     }
   }
 
-  if (!res.ok) {
-    const error = new Error(payload?.error || 'Request failed')
-    error.status = res.status
-    throw error
+  return {
+    id: row.id,
+    name: row.name,
+    state,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function emailToUsername(email) {
+  if (!email || typeof email !== 'string') return 'User'
+  return email.split('@')[0] || 'User'
+}
+
+async function ensureProfile(user) {
+  const fallbackUsername = emailToUsername(user?.email)
+
+  const { error: upsertError } = await supabase.from('profiles').upsert(
+    {
+      id: user.id,
+      username: fallbackUsername,
+    },
+    { onConflict: 'id' }
+  )
+
+  if (upsertError) {
+    throw upsertError
   }
 
-  return payload
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (error) throw error
+
+  return data?.username || fallbackUsername
 }
 
 function AuthScreen({ onAuthSuccess }) {
   const [mode, setMode] = useState('login')
-  const [username, setUsername] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setNotice('')
 
-    const normalizedUsername = username.trim().toLowerCase()
-    if (normalizedUsername.length < 3) {
-      setError('Username must be at least 3 characters.')
+    const normalizedEmail = email.trim().toLowerCase()
+
+    if (!normalizedEmail || !normalizedEmail.includes('@')) {
+      setError('Please enter a valid email.')
       return
     }
 
@@ -165,20 +170,40 @@ function AuthScreen({ onAuthSuccess }) {
     setLoading(true)
 
     try {
-      const endpoint = mode === 'register' ? '/auth/register' : '/auth/login'
-      const data = await apiRequest(endpoint, {
-        method: 'POST',
-        body: { username: normalizedUsername, password },
-      })
+      if (mode === 'register') {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            data: {
+              username: emailToUsername(normalizedEmail),
+            },
+          },
+        })
 
-      const session = {
-        token: data.token,
-        userId: data.user.id,
-        username: data.user.username,
+        if (signUpError) throw signUpError
+
+        if (!data.session) {
+          setNotice('Account created. Check your email to confirm your account.')
+          setMode('login')
+          return
+        }
+
+        if (data.user) {
+          await onAuthSuccess(data.user)
+        }
+      } else {
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password,
+        })
+
+        if (signInError) throw signInError
+
+        if (data.user) {
+          await onAuthSuccess(data.user)
+        }
       }
-
-      saveStoredSession(session)
-      onAuthSuccess(session)
     } catch (err) {
       setError(err.message || 'Could not authenticate.')
     } finally {
@@ -193,33 +218,57 @@ function AuthScreen({ onAuthSuccess }) {
         <p className="auth-subtitle">Sign in to save cards per account (multi-device).</p>
 
         <div className="auth-tabs">
-          <button type="button" className={`auth-tab ${mode === 'login' ? 'active' : ''}`} onClick={() => setMode('login')}>
+          <button
+            type="button"
+            className={`auth-tab ${mode === 'login' ? 'active' : ''}`}
+            onClick={() => setMode('login')}
+          >
             Sign In
           </button>
-          <button type="button" className={`auth-tab ${mode === 'register' ? 'active' : ''}`} onClick={() => setMode('register')}>
+          <button
+            type="button"
+            className={`auth-tab ${mode === 'register' ? 'active' : ''}`}
+            onClick={() => setMode('register')}
+          >
             Create Account
           </button>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
           <label className="field">
-            <span>Username</span>
-            <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Ex: kory" autoComplete="username" />
+            <span>Email</span>
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Ex: user@example.com"
+              autoComplete="email"
+            />
           </label>
 
           <label className="field">
             <span>Password</span>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            />
           </label>
 
           {mode === 'register' && (
             <label className="field">
               <span>Confirm password</span>
-              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+              />
             </label>
           )}
 
           {error && <div className="auth-error">{error}</div>}
+          {!error && notice && <div className="saved-empty">{notice}</div>}
 
           <button type="submit" className="btn auth-submit" disabled={loading}>
             {loading ? 'Processing...' : mode === 'login' ? 'Sign In' : 'Create Account'}
@@ -229,7 +278,7 @@ function AuthScreen({ onAuthSuccess }) {
     </div>
   )
 }
-function CardWorkspace({ session, onLogout, onSessionExpired }) {
+function CardWorkspace({ session, onLogout }) {
   const [title, setTitle] = useState(DEFAULTS.title)
   const [titleColor, setTitleColor] = useState(DEFAULTS.titleColor)
   const [titleFontFamily, setTitleFontFamily] = useState(DEFAULTS.titleFontFamily)
@@ -261,22 +310,20 @@ function CardWorkspace({ session, onLogout, onSessionExpired }) {
 
   const renderedDescription = useMemo(() => renderDescriptionMath(description), [description])
 
-  const handleApiError = (err, fallbackMessage) => {
-    if (err?.status === 401) {
-      onSessionExpired()
-      return
-    }
-
-    alert(err?.message || fallbackMessage)
-  }
-
   const loadSavedCards = async () => {
     setLoadingCards(true)
+
     try {
-      const data = await apiRequest('/cards', { token: session.token })
-      setSavedCards(Array.isArray(data?.cards) ? data.cards : [])
+      const { data, error } = await supabase
+        .from('user_cards')
+        .select('id, name, state_json, created_at, updated_at')
+        .eq('user_id', session.userId)
+        .order('updated_at', { ascending: false })
+
+      if (error) throw error
+      setSavedCards(Array.isArray(data) ? data.map(toCardResponse) : [])
     } catch (err) {
-      handleApiError(err, 'Could not load saved cards.')
+      alert(err?.message || 'Could not load saved cards.')
     } finally {
       setLoadingCards(false)
     }
@@ -284,7 +331,7 @@ function CardWorkspace({ session, onLogout, onSessionExpired }) {
 
   useEffect(() => {
     loadSavedCards()
-  }, [session.token])
+  }, [session.userId])
 
   const downloadBlob = (blob, filename) => {
     const url = URL.createObjectURL(blob)
@@ -350,16 +397,28 @@ function CardWorkspace({ session, onLogout, onSessionExpired }) {
     }
 
     setSavingCard(true)
+
     try {
-      await apiRequest('/cards/upsert', {
-        method: 'POST',
-        token: session.token,
-        body: { name, state: getCardState() },
+      const now = new Date().toISOString()
+      const payload = {
+        user_id: session.userId,
+        name,
+        card_key: name.toLowerCase().replace(/\s+/g, '-'),
+        quantity: 1,
+        state_json: getCardState(),
+        updated_at: now,
+      }
+
+      const { error } = await supabase.from('user_cards').upsert(payload, {
+        onConflict: 'user_id,name',
       })
+
+      if (error) throw error
+
       setSaveName('')
       await loadSavedCards()
     } catch (err) {
-      handleApiError(err, 'Could not save card.')
+      alert(err?.message || 'Could not save card.')
     } finally {
       setSavingCard(false)
     }
@@ -370,10 +429,16 @@ function CardWorkspace({ session, onLogout, onSessionExpired }) {
     if (!ok) return
 
     try {
-      await apiRequest(`/cards/${id}`, { method: 'DELETE', token: session.token })
+      const { error } = await supabase
+        .from('user_cards')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', session.userId)
+
+      if (error) throw error
       await loadSavedCards()
     } catch (err) {
-      handleApiError(err, 'Could not delete card.')
+      alert(err?.message || 'Could not delete card.')
     }
   }
 
@@ -399,6 +464,7 @@ function CardWorkspace({ session, onLogout, onSessionExpired }) {
       console.error(err)
     }
   }
+
   const exportPNG = async () => {
     const el = cardRef.current
     if (!el) return
@@ -454,76 +520,361 @@ function CardWorkspace({ session, onLogout, onSessionExpired }) {
         <h1 className="page-title">Card Generator - Profe Inti</h1>
         <div className="session-user-row">
           <span className="session-user">User: {session.username}</span>
-          <button type="button" className="btn session-logout" onClick={onLogout}>Log out</button>
+          <button type="button" className="btn session-logout" onClick={onLogout}>
+            Log out
+          </button>
         </div>
       </div>
 
       <div className="layout">
         <div className="panel">
-          <label className="field"><span>Name (Title)</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Example: Mean Value Theorem" /></label>
-          <label className="field"><span>Title color</span><input type="color" value={titleColor} onChange={(e) => setTitleColor(e.target.value)} /></label>
-          <label className="field"><span>Title font</span><select value={titleFontFamily} onChange={(e) => setTitleFontFamily(e.target.value)}>{FONT_OPTIONS.map((font) => <option key={font.label} value={font.value}>{font.label}</option>)}</select></label>
-          <label className="field"><span>Title size (px)</span><input type="number" min="16" max="72" value={titleFontSize} onChange={(e) => setTitleFontSize(toNumber(e.target.value, DEFAULTS.titleFontSize))} /></label>
-          <label className="field"><span>Description font</span><select value={descFontFamily} onChange={(e) => setDescFontFamily(e.target.value)}>{FONT_OPTIONS.map((font) => <option key={font.label} value={font.value}>{font.label}</option>)}</select></label>
-          <label className="field"><span>Description size (px)</span><input type="number" min="12" max="48" value={descFontSize} onChange={(e) => setDescFontSize(toNumber(e.target.value, DEFAULTS.descFontSize))} /></label>
-          <label className="field"><span>Rich description</span><DescriptionEditor value={description} onChange={setDescription} baseFontFamily={descFontFamily} baseFontSize={descFontSize} /></label>
+          <label className="field">
+            <span>Name (Title)</span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Example: Mean Value Theorem"
+            />
+          </label>
+          <label className="field">
+            <span>Title color</span>
+            <input type="color" value={titleColor} onChange={(e) => setTitleColor(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Title font</span>
+            <select value={titleFontFamily} onChange={(e) => setTitleFontFamily(e.target.value)}>
+              {FONT_OPTIONS.map((font) => (
+                <option key={font.label} value={font.value}>
+                  {font.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Title size (px)</span>
+            <input
+              type="number"
+              min="16"
+              max="72"
+              value={titleFontSize}
+              onChange={(e) => setTitleFontSize(toNumber(e.target.value, DEFAULTS.titleFontSize))}
+            />
+          </label>
+          <label className="field">
+            <span>Description font</span>
+            <select value={descFontFamily} onChange={(e) => setDescFontFamily(e.target.value)}>
+              {FONT_OPTIONS.map((font) => (
+                <option key={font.label} value={font.value}>
+                  {font.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Description size (px)</span>
+            <input
+              type="number"
+              min="12"
+              max="48"
+              value={descFontSize}
+              onChange={(e) => setDescFontSize(toNumber(e.target.value, DEFAULTS.descFontSize))}
+            />
+          </label>
+          <label className="field">
+            <span>Rich description</span>
+            <DescriptionEditor
+              value={description}
+              onChange={setDescription}
+              baseFontFamily={descFontFamily}
+              baseFontSize={descFontSize}
+            />
+          </label>
         </div>
 
-        <div className="sliders-panel"><div className="sliders">
-          <div className="slider"><span>Art top: {artTop}px</span><input type="range" min="0" max="500" value={artTop} onChange={(e) => setArtTop(Number(e.target.value))} /></div>
-          <div className="slider"><span>Art left: {artLeft}px</span><input type="range" min="0" max="200" value={artLeft} onChange={(e) => setArtLeft(Number(e.target.value))} /></div>
-          <div className="slider"><span>Art width: {artWidth}px</span><input type="range" min="200" max="606" value={artWidth} onChange={(e) => setArtWidth(Number(e.target.value))} /></div>
-          <div className="slider"><span>Art height: {artHeight}px</span><input type="range" min="150" max="600" value={artHeight} onChange={(e) => setArtHeight(Number(e.target.value))} /></div>
-          <div className="slider"><span>{`Title top: ${titleTop}px`}</span><input type="range" min="0" max="300" value={titleTop} onChange={(e) => setTitleTop(Number(e.target.value))} /></div>
-          <div className="slider"><span>{`Description top: ${descTop}px`}</span><input type="range" min="350" max="980" value={descTop} onChange={(e) => setDescTop(Number(e.target.value))} /></div>
-          <button type="button" className="btn" onClick={() => { setTitleTop(DEFAULTS.titleTop); setDescTop(DEFAULTS.descTop); setArtTop(DEFAULTS.artTop); setArtLeft(DEFAULTS.artLeft); setArtWidth(DEFAULTS.artWidth); setArtHeight(DEFAULTS.artHeight) }}>Reset positions</button>
-        </div></div>
+        <div className="sliders-panel">
+          <div className="sliders">
+            <div className="slider">
+              <span>Art top: {artTop}px</span>
+              <input
+                type="range"
+                min="0"
+                max="500"
+                value={artTop}
+                onChange={(e) => setArtTop(Number(e.target.value))}
+              />
+            </div>
+            <div className="slider">
+              <span>Art left: {artLeft}px</span>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={artLeft}
+                onChange={(e) => setArtLeft(Number(e.target.value))}
+              />
+            </div>
+            <div className="slider">
+              <span>Art width: {artWidth}px</span>
+              <input
+                type="range"
+                min="200"
+                max="606"
+                value={artWidth}
+                onChange={(e) => setArtWidth(Number(e.target.value))}
+              />
+            </div>
+            <div className="slider">
+              <span>Art height: {artHeight}px</span>
+              <input
+                type="range"
+                min="150"
+                max="600"
+                value={artHeight}
+                onChange={(e) => setArtHeight(Number(e.target.value))}
+              />
+            </div>
+            <div className="slider">
+              <span>{`Title top: ${titleTop}px`}</span>
+              <input
+                type="range"
+                min="0"
+                max="300"
+                value={titleTop}
+                onChange={(e) => setTitleTop(Number(e.target.value))}
+              />
+            </div>
+            <div className="slider">
+              <span>{`Description top: ${descTop}px`}</span>
+              <input
+                type="range"
+                min="350"
+                max="980"
+                value={descTop}
+                onChange={(e) => setDescTop(Number(e.target.value))}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setTitleTop(DEFAULTS.titleTop)
+                setDescTop(DEFAULTS.descTop)
+                setArtTop(DEFAULTS.artTop)
+                setArtLeft(DEFAULTS.artLeft)
+                setArtWidth(DEFAULTS.artWidth)
+                setArtHeight(DEFAULTS.artHeight)
+              }}
+            >
+              Reset positions
+            </button>
+          </div>
+        </div>
 
         <div className="assets-panel">
           <div className="assets-title">Account & Assets</div>
-          <label className="field"><span>Art (main image)</span><input type="file" accept="image/*" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onloadend = () => setImageUrl(reader.result); reader.readAsDataURL(file) }} /></label>
-          <div className="rarity-selector"><div className="rarity-title">Rarity (Frame)</div><div className="rarity-options">{FRAMES.map((f) => <button key={f.id} type="button" className={`rarity-item ${frameId === f.id ? 'active' : ''}`} onClick={() => setFrameId(f.id)} title={f.label}><img src={f.src} alt={f.label} className="rarity-thumb" /><div className="rarity-label">{f.label}</div></button>)}</div></div>
-          <div className="export-row"><button type="button" className="btn" onClick={exportPNG}>Export PNG</button><button type="button" className="btn" onClick={exportPDF}>Export PDF</button><button type="button" className="btn" onClick={exportJSON}>Export JSON</button><button type="button" className="btn" onClick={triggerImport}>Import JSON</button><input ref={importRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={onImportFile} /></div>
-          <div className="saved-section"><div className="saved-title">My saved cards</div><div className="saved-save-row"><input value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder="Save name" /><button type="button" className="btn" onClick={saveCardForUser} disabled={savingCard}>{savingCard ? 'Saving...' : 'Save to account'}</button></div><div className="saved-list">{loadingCards && <div className="saved-empty">Loading cards...</div>}{!loadingCards && savedCards.length === 0 && <div className="saved-empty">No saved cards yet.</div>}{savedCards.map((card) => <div key={card.id} className="saved-item"><div className="saved-item-meta"><div className="saved-item-name">{card.name}</div><div className="saved-item-date">{new Date(card.updatedAt).toLocaleString()}</div></div><div className="saved-item-actions"><button type="button" className="btn" onClick={() => applyCardState(card.state)}>Load</button><button type="button" className="btn danger" onClick={() => deleteSavedCard(card.id)}>Delete</button></div></div>)}</div></div>
+          <label className="field">
+            <span>Art (main image)</span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                const reader = new FileReader()
+                reader.onloadend = () => setImageUrl(reader.result)
+                reader.readAsDataURL(file)
+              }}
+            />
+          </label>
+          <div className="rarity-selector">
+            <div className="rarity-title">Rarity (Frame)</div>
+            <div className="rarity-options">
+              {FRAMES.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={`rarity-item ${frameId === f.id ? 'active' : ''}`}
+                  onClick={() => setFrameId(f.id)}
+                  title={f.label}
+                >
+                  <img src={f.src} alt={f.label} className="rarity-thumb" />
+                  <div className="rarity-label">{f.label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="export-row">
+            <button type="button" className="btn" onClick={exportPNG}>
+              Export PNG
+            </button>
+            <button type="button" className="btn" onClick={exportPDF}>
+              Export PDF
+            </button>
+            <button type="button" className="btn" onClick={exportJSON}>
+              Export JSON
+            </button>
+            <button type="button" className="btn" onClick={triggerImport}>
+              Import JSON
+            </button>
+            <input
+              ref={importRef}
+              type="file"
+              accept="application/json"
+              style={{ display: 'none' }}
+              onChange={onImportFile}
+            />
+          </div>
+          <div className="saved-section">
+            <div className="saved-title">My saved cards</div>
+            <div className="saved-save-row">
+              <input
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+                placeholder="Save name"
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={saveCardForUser}
+                disabled={savingCard}
+              >
+                {savingCard ? 'Saving...' : 'Save to account'}
+              </button>
+            </div>
+            <div className="saved-list">
+              {loadingCards && <div className="saved-empty">Loading cards...</div>}
+              {!loadingCards && savedCards.length === 0 && (
+                <div className="saved-empty">No saved cards yet.</div>
+              )}
+              {savedCards.map((card) => (
+                <div key={card.id} className="saved-item">
+                  <div className="saved-item-meta">
+                    <div className="saved-item-name">{card.name}</div>
+                    <div className="saved-item-date">
+                      {card.updatedAt ? new Date(card.updatedAt).toLocaleString() : ''}
+                    </div>
+                  </div>
+                  <div className="saved-item-actions">
+                    <button type="button" className="btn" onClick={() => applyCardState(card.state)}>
+                      Load
+                    </button>
+                    <button
+                      type="button"
+                      className="btn danger"
+                      onClick={() => deleteSavedCard(card.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="preview-wrap"><div className="card" ref={cardRef}><div className="art" style={{ top: artTop, left: artLeft, width: artWidth, height: artHeight, right: 'auto' }}><img src={imageUrl} alt="Art" /></div><img className="frame" src={frame} alt="Frame" /><div className="title-box" style={{ top: titleTop }}><h2 className="card-title" style={{ color: titleColor, fontFamily: titleFontFamily, fontSize: `${titleFontSize}px` }}>{title}</h2></div><div className="desc-box" style={{ top: descTop }}><div className="card-description" style={{ fontFamily: descFontFamily, fontSize: `${descFontSize}px` }} dangerouslySetInnerHTML={{ __html: renderedDescription }} /></div></div></div>
+        <div className="preview-wrap">
+          <div className="card" ref={cardRef}>
+            <div
+              className="art"
+              style={{ top: artTop, left: artLeft, width: artWidth, height: artHeight, right: 'auto' }}
+            >
+              <img src={imageUrl} alt="Art" />
+            </div>
+            <img className="frame" src={frame} alt="Frame" />
+            <div className="title-box" style={{ top: titleTop }}>
+              <h2
+                className="card-title"
+                style={{ color: titleColor, fontFamily: titleFontFamily, fontSize: `${titleFontSize}px` }}
+              >
+                {title}
+              </h2>
+            </div>
+            <div className="desc-box" style={{ top: descTop }}>
+              <div
+                className="card-description"
+                style={{ fontFamily: descFontFamily, fontSize: `${descFontSize}px` }}
+                dangerouslySetInnerHTML={{ __html: renderedDescription }}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
 }
+
 function App() {
   const [session, setSession] = useState(null)
   const [bootLoading, setBootLoading] = useState(true)
 
+  const hydrateSessionFromUser = async (user) => {
+    if (!user) {
+      setSession(null)
+      return
+    }
+
+    let username = emailToUsername(user.email)
+
+    try {
+      username = await ensureProfile(user)
+    } catch (error) {
+      console.error('Could not sync profile:', error)
+    }
+
+    setSession({
+      userId: user.id,
+      email: user.email,
+      username,
+    })
+  }
+
   useEffect(() => {
+    let active = true
+
     const bootstrap = async () => {
-      const stored = getStoredSession()
-      if (!stored) {
-        setBootLoading(false)
-        return
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!active) return
+
+      if (user) {
+        await hydrateSessionFromUser(user)
+      } else {
+        setSession(null)
       }
 
-      try {
-        const data = await apiRequest('/auth/me', { token: stored.token })
-        const validSession = { token: stored.token, userId: data.user.id, username: data.user.username }
-        saveStoredSession(validSession)
-        setSession(validSession)
-      } catch {
-        clearStoredSession()
-        setSession(null)
-      } finally {
-        setBootLoading(false)
-      }
+      setBootLoading(false)
     }
 
     bootstrap()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+      if (!active) return
+
+      if (nextSession?.user) {
+        await hydrateSessionFromUser(nextSession.user)
+      } else {
+        setSession(null)
+      }
+
+      setBootLoading(false)
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
   }, [])
 
-  const handleAuthSuccess = (nextSession) => setSession(nextSession)
+  const handleAuthSuccess = async (user) => {
+    await hydrateSessionFromUser(user)
+  }
 
-  const handleLogout = () => {
-    clearStoredSession()
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
     setSession(null)
   }
 
@@ -540,7 +891,7 @@ function App() {
 
   if (!session) return <AuthScreen onAuthSuccess={handleAuthSuccess} />
 
-  return <CardWorkspace session={session} onLogout={handleLogout} onSessionExpired={handleLogout} />
+  return <CardWorkspace session={session} onLogout={handleLogout} />
 }
 
 export default App

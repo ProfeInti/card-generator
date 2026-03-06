@@ -1,4 +1,5 @@
-﻿import jwt from 'jsonwebtoken'
+// Deprecated: Local JWT auth replaced by Supabase Auth.
+import jwt from 'jsonwebtoken'
 
 function getJwtSecret() {
   return process.env.JWT_SECRET || 'dev-only-secret-change-me'

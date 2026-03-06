@@ -1,4 +1,5 @@
-﻿import 'dotenv/config'
+// Deprecated: Local Node API replaced by Supabase.
+import 'dotenv/config'
 import bcrypt from 'bcryptjs'
 import cors from 'cors'
 import express from 'express'

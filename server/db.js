@@ -1,4 +1,5 @@
-﻿import { DatabaseSync } from 'node:sqlite'
+// Deprecated: Local SQLite persistence replaced by Supabase Postgres.
+import { DatabaseSync } from 'node:sqlite'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
