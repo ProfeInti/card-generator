@@ -56,6 +56,42 @@ const FRAMES = [
   { id: 'mythic', label: 'Mythic', src: frameMythic },
 ]
 
+const THEME_SUGGESTIONS = [
+  'Algebra',
+  'Arithmetic',
+  'Fractions',
+  'Geometry',
+  'Trigonometry',
+  'Functions',
+  'Statistics',
+]
+
+const SUBTHEME_SUGGESTIONS = [
+  'Factorization',
+  'Equations',
+  'Powers',
+  'Radicals',
+  'Linear Functions',
+  'Proportionality',
+  'Area',
+  'Angles',
+  'Simplification',
+]
+
+const EFFECT_TYPE_SUGGESTIONS = [
+  'transform',
+  'simplify',
+  'solve',
+  'verify',
+  'hint',
+  'support',
+  'correct_error',
+]
+
+const DIFFICULTY_SUGGESTIONS = ['Beginner', 'Intermediate', 'Advanced', 'Olympiad']
+
+const RARITY_SUGGESTIONS = ['Common', 'Rare', 'Epic', 'Legendary', 'Mythic']
+
 function toNumber(v, fallback) {
   const n = Number(v)
   return Number.isFinite(n) ? n : fallback
@@ -85,23 +121,70 @@ function renderDescriptionMath(html) {
   return doc.body.innerHTML
 }
 
-function toCardResponse(row) {
-  let state = {}
+function sanitizeMetaText(value) {
+  if (typeof value !== 'string') return ''
+  return decodeUnicodeEscapes(value).trim()
+}
 
-  if (row?.state_json && typeof row.state_json === 'object') {
-    state = row.state_json
-  } else if (typeof row?.state_json === 'string') {
-    try {
-      state = JSON.parse(row.state_json)
-    } catch {
-      state = {}
+function parseTags(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((tag) => sanitizeMetaText(tag))
+      .filter(Boolean)
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((tag) => sanitizeMetaText(tag))
+      .filter(Boolean)
+  }
+
+  return []
+}
+
+function tagsToInputValue(tags) {
+  return parseTags(tags).join(', ')
+}
+
+function normalizeMetaForDb(value) {
+  const normalized = sanitizeMetaText(value)
+  return normalized || null
+}
+
+function normalizeTagsForDb(tagsInput) {
+  const tags = parseTags(tagsInput)
+  return tags.length ? tags : null
+}
+
+function toCardResponse(row) {
+  let state
+
+  if (row && Object.prototype.hasOwnProperty.call(row, 'state_json')) {
+    if (row?.state_json && typeof row.state_json === 'object') {
+      state = row.state_json
+    } else if (typeof row?.state_json === 'string') {
+      try {
+        state = JSON.parse(row.state_json)
+      } catch {
+        state = undefined
+      }
     }
   }
 
   return {
     id: row.id,
     name: row.name,
+    cardKey: row.card_key || '',
+    quantity: toNumber(row.quantity, 1),
     state,
+    theme: sanitizeMetaText(row.theme),
+    subtheme: sanitizeMetaText(row.subtheme),
+    effectType: sanitizeMetaText(row.effect_type),
+    difficulty: sanitizeMetaText(row.difficulty),
+    rarity: sanitizeMetaText(row.rarity),
+    isFavorite: Boolean(row.is_favorite),
+    tags: parseTags(row.tags),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -309,11 +392,29 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
   const [titleTop, setTitleTop] = useState(DEFAULTS.titleTop)
   const [descTop, setDescTop] = useState(DEFAULTS.descTop)
 
+  const [theme, setTheme] = useState('')
+  const [subtheme, setSubtheme] = useState('')
+  const [effectType, setEffectType] = useState('')
+  const [difficulty, setDifficulty] = useState('')
+  const [rarity, setRarity] = useState('')
+  const [isFavorite, setIsFavorite] = useState(false)
+  const [tagsInput, setTagsInput] = useState('')
+
   const [saveName, setSaveName] = useState('')
   const [savedCards, setSavedCards] = useState([])
   const [savingCard, setSavingCard] = useState(false)
   const [loadingCards, setLoadingCards] = useState(false)
+  const [loadingCardId, setLoadingCardId] = useState(null)
   const [activeView, setActiveView] = useState(initialView)
+
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterTheme, setFilterTheme] = useState('')
+  const [filterSubtheme, setFilterSubtheme] = useState('')
+  const [filterEffectType, setFilterEffectType] = useState('')
+  const [filterDifficulty, setFilterDifficulty] = useState('')
+  const [filterRarity, setFilterRarity] = useState('')
+  const [favoritesOnly, setFavoritesOnly] = useState(false)
+  const [sortBy, setSortBy] = useState('updated_desc')
 
   const frame = FRAMES.find((f) => f.id === frameId)?.src ?? frameCommon
   const cardRef = useRef(null)
@@ -325,6 +426,18 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
 
   const renderedDescription = useMemo(() => renderDescriptionMath(description), [description])
 
+  const applyMetadataFromSource = (source) => {
+    const metadata = source?.metadata && typeof source.metadata === 'object' ? source.metadata : source
+
+    setTheme(sanitizeMetaText(metadata?.theme))
+    setSubtheme(sanitizeMetaText(metadata?.subtheme))
+    setEffectType(sanitizeMetaText(metadata?.effectType ?? metadata?.effect_type))
+    setDifficulty(sanitizeMetaText(metadata?.difficulty))
+    setRarity(sanitizeMetaText(metadata?.rarity))
+    setIsFavorite(Boolean(metadata?.isFavorite ?? metadata?.is_favorite))
+    setTagsInput(tagsToInputValue(metadata?.tags))
+  }
+
   const loadSavedCards = async () => {
     console.log('[cards] load start', { userId: session.userId })
     setLoadingCards(true)
@@ -332,7 +445,7 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
     try {
       const { data, error } = await supabase
         .from('user_cards')
-        .select('id, name, state_json, created_at, updated_at')
+        .select('id, name, card_key, quantity, theme, subtheme, effect_type, difficulty, rarity, is_favorite, tags, created_at, updated_at')
         .eq('user_id', session.userId)
         .order('updated_at', { ascending: false })
 
@@ -353,6 +466,74 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
     if (activeView !== 'collection') return
     loadSavedCards()
   }, [session.userId, activeView])
+
+  const visibleCards = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase()
+
+    const filtered = savedCards.filter((card) => {
+      if (normalizedSearch && !card.name.toLowerCase().includes(normalizedSearch)) return false
+      if (filterTheme && card.theme !== filterTheme) return false
+      if (filterSubtheme && card.subtheme !== filterSubtheme) return false
+      if (filterEffectType && card.effectType !== filterEffectType) return false
+      if (filterDifficulty && card.difficulty !== filterDifficulty) return false
+      if (filterRarity && card.rarity !== filterRarity) return false
+      if (favoritesOnly && !card.isFavorite) return false
+      return true
+    })
+
+    filtered.sort((a, b) => {
+      if (sortBy === 'name_asc') {
+        return a.name.localeCompare(b.name)
+      }
+
+      if (sortBy === 'quantity_desc') {
+        return toNumber(b.quantity, 0) - toNumber(a.quantity, 0)
+      }
+
+      if (sortBy === 'created_desc') {
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      }
+
+      return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime()
+    })
+
+    return filtered
+  }, [
+    savedCards,
+    searchQuery,
+    filterTheme,
+    filterSubtheme,
+    filterEffectType,
+    filterDifficulty,
+    filterRarity,
+    favoritesOnly,
+    sortBy,
+  ])
+
+  const uniqueThemes = useMemo(
+    () => [...new Set(savedCards.map((card) => card.theme).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [savedCards]
+  )
+
+  const uniqueSubthemes = useMemo(
+    () => [...new Set(savedCards.map((card) => card.subtheme).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [savedCards]
+  )
+
+  const uniqueEffectTypes = useMemo(
+    () => [...new Set(savedCards.map((card) => card.effectType).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [savedCards]
+  )
+
+  const uniqueDifficulties = useMemo(
+    () => [...new Set(savedCards.map((card) => card.difficulty).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [savedCards]
+  )
+
+  const uniqueRarities = useMemo(
+    () => [...new Set(savedCards.map((card) => card.rarity).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [savedCards]
+  )
 
   const downloadBlob = (blob, filename) => {
     const url = URL.createObjectURL(blob)
@@ -382,6 +563,15 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
     artHeight,
     titleTop,
     descTop,
+    metadata: {
+      theme: sanitizeMetaText(theme),
+      subtheme: sanitizeMetaText(subtheme),
+      effectType: sanitizeMetaText(effectType),
+      difficulty: sanitizeMetaText(difficulty),
+      rarity: sanitizeMetaText(rarity),
+      isFavorite,
+      tags: parseTags(tagsInput),
+    },
   })
 
   const applyCardState = (data) => {
@@ -408,6 +598,8 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
     setArtHeight(toNumber(data.artHeight, DEFAULTS.artHeight))
     setTitleTop(toNumber(data.titleTop, DEFAULTS.titleTop))
     setDescTop(toNumber(data.descTop, DEFAULTS.descTop))
+
+    applyMetadataFromSource(data)
   }
 
   const saveCardForUser = async () => {
@@ -427,6 +619,13 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
         card_key: name.toLowerCase().replace(/\s+/g, '-'),
         quantity: 1,
         state_json: getCardState(),
+        theme: normalizeMetaForDb(theme),
+        subtheme: normalizeMetaForDb(subtheme),
+        effect_type: normalizeMetaForDb(effectType),
+        difficulty: normalizeMetaForDb(difficulty),
+        rarity: normalizeMetaForDb(rarity),
+        is_favorite: Boolean(isFavorite),
+        tags: normalizeTagsForDb(tagsInput),
         updated_at: now,
       }
 
@@ -444,6 +643,35 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
       alert(err?.message || 'Could not save card.')
     } finally {
       setSavingCard(false)
+    }
+  }
+
+  const loadCardInGenerator = async (card) => {
+    if (!card?.id) return
+    setLoadingCardId(card.id)
+
+    try {
+      const { data, error } = await supabase
+        .from('user_cards')
+        .select('id, name, state_json, theme, subtheme, effect_type, difficulty, rarity, is_favorite, tags, created_at, updated_at')
+        .eq('id', card.id)
+        .eq('user_id', session.userId)
+        .single()
+
+      if (error) throw error
+
+      const normalized = toCardResponse(data)
+      if (normalized.state) {
+        applyCardState(normalized.state)
+      }
+      applyMetadataFromSource(normalized)
+      setSaveName(normalized.name || '')
+      setActiveView('generator')
+    } catch (err) {
+      console.error('[cards] load single error', err)
+      alert(err?.message || 'Could not load card for editing.')
+    } finally {
+      setLoadingCardId(null)
     }
   }
 
@@ -557,9 +785,8 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
     }
   }
 
-  const openCollection = async () => {
+  const openCollection = () => {
     setActiveView('collection')
-    await loadSavedCards()
   }
 
   if (activeView === 'collection') {
@@ -581,29 +808,119 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
         <div className="collection-layout">
           <div className="assets-panel">
             <div className="saved-title">My saved cards</div>
+
+            <div className="collection-toolbar">
+              <label className="field">
+                <span>Search by name</span>
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search cards..."
+                />
+              </label>
+
+              <div className="collection-grid-filters">
+                <label className="field">
+                  <span>Theme</span>
+                  <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)}>
+                    <option value="">All</option>
+                    {uniqueThemes.map((value) => (
+                      <option key={value} value={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Subtheme</span>
+                  <select value={filterSubtheme} onChange={(e) => setFilterSubtheme(e.target.value)}>
+                    <option value="">All</option>
+                    {uniqueSubthemes.map((value) => (
+                      <option key={value} value={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Effect</span>
+                  <select value={filterEffectType} onChange={(e) => setFilterEffectType(e.target.value)}>
+                    <option value="">All</option>
+                    {uniqueEffectTypes.map((value) => (
+                      <option key={value} value={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Difficulty</span>
+                  <select value={filterDifficulty} onChange={(e) => setFilterDifficulty(e.target.value)}>
+                    <option value="">All</option>
+                    {uniqueDifficulties.map((value) => (
+                      <option key={value} value={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Rarity</span>
+                  <select value={filterRarity} onChange={(e) => setFilterRarity(e.target.value)}>
+                    <option value="">All</option>
+                    {uniqueRarities.map((value) => (
+                      <option key={value} value={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Sort</span>
+                  <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+                    <option value="updated_desc">Updated (newest)</option>
+                    <option value="created_desc">Created (newest)</option>
+                    <option value="name_asc">Name (A-Z)</option>
+                    <option value="quantity_desc">Quantity (high-low)</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="collection-favorites-toggle">
+                <input
+                  type="checkbox"
+                  checked={favoritesOnly}
+                  onChange={(e) => setFavoritesOnly(e.target.checked)}
+                />
+                Favorites only
+              </label>
+            </div>
+
             <div className="saved-list collection-list">
               {loadingCards && <div className="saved-empty">Loading cards...</div>}
-              {!loadingCards && savedCards.length === 0 && (
-                <div className="saved-empty">No saved cards yet.</div>
+              {!loadingCards && visibleCards.length === 0 && (
+                <div className="saved-empty">No cards match the current filters.</div>
               )}
-              {savedCards.map((card) => (
+              {visibleCards.map((card) => (
                 <div key={card.id} className="saved-item">
                   <div className="saved-item-meta">
-                    <div className="saved-item-name">{card.name}</div>
+                    <div className="saved-item-name">
+                      {card.name}
+                      {card.isFavorite ? ' [Fav]' : ''}
+                    </div>
                     <div className="saved-item-date">
                       {card.updatedAt ? new Date(card.updatedAt).toLocaleString() : ''}
                     </div>
+                    <div className="saved-item-taxonomy">
+                      <span>Theme: {card.theme || 'Unclassified'}</span>
+                      <span>Subtheme: {card.subtheme || 'Unclassified'}</span>
+                      <span>Effect: {card.effectType || 'Unclassified'}</span>
+                      <span>Difficulty: {card.difficulty || 'Unclassified'}</span>
+                      <span>Rarity: {card.rarity || 'Unclassified'}</span>
+                      <span>Qty: {card.quantity}</span>
+                    </div>
+                    {card.tags.length > 0 && (
+                      <div className="saved-item-tags">Tags: {card.tags.join(', ')}</div>
+                    )}
                   </div>
                   <div className="saved-item-actions">
                     <button
                       type="button"
                       className="btn"
-                      onClick={() => {
-                        applyCardState(card.state)
-                        setActiveView('generator')
-                      }}
+                      disabled={loadingCardId === card.id}
+                      onClick={() => loadCardInGenerator(card)}
                     >
-                      Load in Generator
+                      {loadingCardId === card.id ? 'Loading...' : 'Load in Generator'}
                     </button>
                     <button
                       type="button"
@@ -627,6 +944,7 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
       </div>
     )
   }
+
 
   return (
     <div className="page">
@@ -706,6 +1024,101 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
               baseFontSize={descFontSize}
             />
           </label>
+          <div className="metadata-section">
+            <div className="saved-title">Mathematical Classification</div>
+
+            <label className="field">
+              <span>Theme</span>
+              <input
+                list="theme-suggestions"
+                value={theme}
+                onChange={(e) => setTheme(e.target.value)}
+                placeholder="Algebra, Geometry, Statistics..."
+              />
+            </label>
+            <datalist id="theme-suggestions">
+              {THEME_SUGGESTIONS.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+
+            <label className="field">
+              <span>Subtheme</span>
+              <input
+                list="subtheme-suggestions"
+                value={subtheme}
+                onChange={(e) => setSubtheme(e.target.value)}
+                placeholder="Factorization, Angles, Radicals..."
+              />
+            </label>
+            <datalist id="subtheme-suggestions">
+              {SUBTHEME_SUGGESTIONS.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+
+            <label className="field">
+              <span>Effect type</span>
+              <input
+                list="effect-type-suggestions"
+                value={effectType}
+                onChange={(e) => setEffectType(e.target.value)}
+                placeholder="solve, simplify, verify..."
+              />
+            </label>
+            <datalist id="effect-type-suggestions">
+              {EFFECT_TYPE_SUGGESTIONS.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+
+            <label className="field">
+              <span>Difficulty</span>
+              <input
+                list="difficulty-suggestions"
+                value={difficulty}
+                onChange={(e) => setDifficulty(e.target.value)}
+                placeholder="Beginner, Intermediate..."
+              />
+            </label>
+            <datalist id="difficulty-suggestions">
+              {DIFFICULTY_SUGGESTIONS.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+
+            <label className="field">
+              <span>Rarity (optional)</span>
+              <input
+                list="rarity-suggestions"
+                value={rarity}
+                onChange={(e) => setRarity(e.target.value)}
+                placeholder="Common, Rare..."
+              />
+            </label>
+            <datalist id="rarity-suggestions">
+              {RARITY_SUGGESTIONS.map((value) => (
+                <option key={value} value={value} />
+              ))}
+            </datalist>
+
+            <label className="field">
+              <span>Tags (comma separated)</span>
+              <input
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+                placeholder="equations, quadratic, proof"
+              />
+            </label>
+
+            <button
+              type="button"
+              className={'btn favorite-toggle ' + (isFavorite ? 'active' : '')}
+              onClick={() => setIsFavorite((prev) => !prev)}
+            >
+              {isFavorite ? 'Favorite card' : 'Mark as favorite'}
+            </button>
+          </div>
         </div>
 
         <div className="sliders-panel">
