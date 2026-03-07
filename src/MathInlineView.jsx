@@ -1,4 +1,4 @@
-﻿import { NodeViewWrapper } from '@tiptap/react'
+import { NodeViewWrapper } from '@tiptap/react'
 import { useEffect, useRef, useState } from 'react'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
@@ -14,15 +14,61 @@ function renderLatex(latex) {
   }
 }
 
+function hideVirtualKeyboardSafely(mf) {
+  try {
+    mf?.executeCommand('hideVirtualKeyboard')
+  } catch {
+    // noop
+  }
+
+  try {
+    if (typeof window !== 'undefined' && window.mathVirtualKeyboard) {
+      if (typeof window.mathVirtualKeyboard.hide === 'function') {
+        window.mathVirtualKeyboard.hide()
+      }
+      window.mathVirtualKeyboard.visible = false
+    }
+  } catch {
+    // noop
+  }
+}
+
+function readLatexSafely(mf, fallback = '') {
+  if (!mf) return fallback
+
+  try {
+    const v = String(mf.value || '').trim()
+    if (v) return v
+  } catch {
+    // noop
+  }
+
+  try {
+    const v = String(mf.getValue?.('latex') || '').trim()
+    if (v) return v
+  } catch {
+    // noop
+  }
+
+  return String(fallback || '').trim()
+}
+
 export default function MathInlineView({ node, updateAttributes }) {
   const latex = node.attrs.latex || '\\sqrt{x}'
   const [open, setOpen] = useState(false)
   const hostRef = useRef(null)
+  const latestLatexRef = useRef(latex)
+  const draftLatexRef = useRef(latex)
+  const pendingSaveRef = useRef(null)
 
   useEffect(() => {
+    latestLatexRef.current = latex
+    if (!open) {
+      draftLatexRef.current = latex
+    }
     if (!hostRef.current) return
     hostRef.current.innerHTML = renderLatex(latex)
-  }, [latex])
+  }, [latex, open])
 
   const mfHostRef = useRef(null)
   const mfRef = useRef(null)
@@ -32,17 +78,20 @@ export default function MathInlineView({ node, updateAttributes }) {
 
     const mf = new MathfieldElement()
     mfRef.current = mf
-
-    mf.setOptions({
-      virtualKeyboardMode: 'manual',
-      smartFence: true,
-      smartSuperscript: true,
-    })
+    mf.mathVirtualKeyboardPolicy = 'manual'
+    mf.smartFence = true
+    mf.smartSuperscript = true
 
     mf.style.width = '100%'
     mf.style.fontSize = '22px'
-    mf.value = latex
+    mf.value = latestLatexRef.current || latex
+    draftLatexRef.current = readLatexSafely(mf, latestLatexRef.current || latex)
 
+    const onInput = () => {
+      draftLatexRef.current = readLatexSafely(mf, draftLatexRef.current)
+    }
+
+    mf.addEventListener('input', onInput)
     mfHostRef.current.appendChild(mf)
 
     setTimeout(() => {
@@ -55,8 +104,9 @@ export default function MathInlineView({ node, updateAttributes }) {
     }, 0)
 
     return () => {
+      hideVirtualKeyboardSafely(mf)
       try {
-        mf.executeCommand('hideVirtualKeyboard')
+        mf.removeEventListener('input', onInput)
       } catch {
         // noop
       }
@@ -67,7 +117,7 @@ export default function MathInlineView({ node, updateAttributes }) {
       }
       mfRef.current = null
     }
-  }, [open, latex])
+  }, [open])
 
   useEffect(() => {
     if (!open) return
@@ -83,20 +133,34 @@ export default function MathInlineView({ node, updateAttributes }) {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [open])
 
+  useEffect(() => {
+    if (open || pendingSaveRef.current === null) return
+
+    const valueToSave = pendingSaveRef.current
+    pendingSaveRef.current = null
+
+    requestAnimationFrame(() => {
+      try {
+        updateAttributes({ latex: valueToSave || latestLatexRef.current || latex })
+      } catch (error) {
+        console.error('Could not save math expression:', error)
+      }
+    })
+  }, [open, updateAttributes, latex])
+
   const closeModal = (save) => {
     const mf = mfRef.current
 
-    if (save && mf) {
-      const nextLatex = (mf.getValue('latex') || '').trim()
-      updateAttributes({ latex: nextLatex || latex })
+    if (save) {
+      const fallback = draftLatexRef.current || latestLatexRef.current || latex
+      pendingSaveRef.current = readLatexSafely(mf, fallback) || fallback
     }
 
     try {
-      mf?.executeCommand('hideVirtualKeyboard')
-    } catch {
-      // noop
+      hideVirtualKeyboardSafely(mf)
+    } finally {
+      setOpen(false)
     }
-    setOpen(false)
   }
 
   return (
@@ -161,20 +225,7 @@ export default function MathInlineView({ node, updateAttributes }) {
 
             <div className="math-modal-title">Edit formula</div>
 
-            <div
-              ref={mfHostRef}
-              className="mathfield-host"
-              onMouseDown={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-              }}
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-              }}
-            />
-
-            <div className="math-modal-actions">
+            <div className="math-modal-actions math-modal-actions-top">
               <button
                 type="button"
                 className="rt-btn"
@@ -207,6 +258,19 @@ export default function MathInlineView({ node, updateAttributes }) {
                 Cancel
               </button>
             </div>
+
+            <div
+              ref={mfHostRef}
+              className="mathfield-host"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+              }}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+              }}
+            />
 
             <div className="math-hint">Tip: use the MathLive keypad. Escape closes the editor.</div>
           </div>

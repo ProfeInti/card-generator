@@ -1,4 +1,4 @@
-
+﻿
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
@@ -28,6 +28,8 @@ const FONT_OPTIONS = [
   { value: '"Tahoma", "Geneva", sans-serif', label: 'Tahoma' },
 ]
 
+const DEFAULT_ART_DATA_URL = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='606' height='320' viewBox='0 0 606 320'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23131f2b'/%3E%3Cstop offset='100%25' stop-color='%232a3f56'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='606' height='320' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23b6fff0' font-family='Verdana, sans-serif' font-size='24'%3EUpload or paste an image%3C/text%3E%3C/svg%3E`
+
 const DEFAULTS = {
   title: 'Card Name',
   titleColor: '#00ff88',
@@ -36,7 +38,7 @@ const DEFAULTS = {
   description: '<p><span style="color:#b6fff0">This is the card description.</span></p>',
   descFontFamily: FONT_OPTIONS[0].value,
   descFontSize: 20,
-  imageUrl: 'https://via.placeholder.com/300x200',
+  imageUrl: DEFAULT_ART_DATA_URL,
   frameId: 'common',
   artTop: 140,
   artLeft: 70,
@@ -112,6 +114,7 @@ function emailToUsername(email) {
 
 async function ensureProfile(user) {
   const fallbackUsername = emailToUsername(user?.email)
+  console.log('[profile] load start', { userId: user?.id ?? null })
 
   const { error: upsertError } = await supabase.from('profiles').upsert(
     {
@@ -122,6 +125,7 @@ async function ensureProfile(user) {
   )
 
   if (upsertError) {
+    console.error('[profile] upsert error', upsertError)
     throw upsertError
   }
 
@@ -131,9 +135,14 @@ async function ensureProfile(user) {
     .eq('id', user.id)
     .maybeSingle()
 
-  if (error) throw error
+  if (error) {
+    console.error('[profile] select error', error)
+    throw error
+  }
 
-  return data?.username || fallbackUsername
+  const resolvedUsername = data?.username || fallbackUsername
+  console.log('[profile] load done', { userId: user?.id ?? null, resolvedUsername })
+  return resolvedUsername
 }
 
 function AuthScreen({ onAuthSuccess }) {
@@ -278,7 +287,7 @@ function AuthScreen({ onAuthSuccess }) {
     </div>
   )
 }
-function CardWorkspace({ session, onLogout }) {
+function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToMenu }) {
   const [title, setTitle] = useState(DEFAULTS.title)
   const [titleColor, setTitleColor] = useState(DEFAULTS.titleColor)
   const [titleFontFamily, setTitleFontFamily] = useState(DEFAULTS.titleFontFamily)
@@ -289,6 +298,7 @@ function CardWorkspace({ session, onLogout }) {
   const [descFontSize, setDescFontSize] = useState(DEFAULTS.descFontSize)
 
   const [imageUrl, setImageUrl] = useState(DEFAULTS.imageUrl)
+  const [artUrlInput, setArtUrlInput] = useState('')
   const [frameId, setFrameId] = useState(DEFAULTS.frameId)
 
   const [artTop, setArtTop] = useState(DEFAULTS.artTop)
@@ -303,14 +313,20 @@ function CardWorkspace({ session, onLogout }) {
   const [savedCards, setSavedCards] = useState([])
   const [savingCard, setSavingCard] = useState(false)
   const [loadingCards, setLoadingCards] = useState(false)
+  const [activeView, setActiveView] = useState(initialView)
 
   const frame = FRAMES.find((f) => f.id === frameId)?.src ?? frameCommon
   const cardRef = useRef(null)
   const importRef = useRef(null)
 
+  useEffect(() => {
+    setActiveView(initialView)
+  }, [initialView])
+
   const renderedDescription = useMemo(() => renderDescriptionMath(description), [description])
 
   const loadSavedCards = async () => {
+    console.log('[cards] load start', { userId: session.userId })
     setLoadingCards(true)
 
     try {
@@ -321,17 +337,22 @@ function CardWorkspace({ session, onLogout }) {
         .order('updated_at', { ascending: false })
 
       if (error) throw error
-      setSavedCards(Array.isArray(data) ? data.map(toCardResponse) : [])
+      const normalized = Array.isArray(data) ? data.map(toCardResponse) : []
+      setSavedCards(normalized)
+      console.log('[cards] load done', { userId: session.userId, count: normalized.length })
     } catch (err) {
+      console.error('[cards] load error', err)
       alert(err?.message || 'Could not load saved cards.')
     } finally {
+      console.log('[cards] setLoadingCards(false)')
       setLoadingCards(false)
     }
   }
 
   useEffect(() => {
+    if (activeView !== 'collection') return
     loadSavedCards()
-  }, [session.userId])
+  }, [session.userId, activeView])
 
   const downloadBlob = (blob, filename) => {
     const url = URL.createObjectURL(blob)
@@ -416,7 +437,9 @@ function CardWorkspace({ session, onLogout }) {
       if (error) throw error
 
       setSaveName('')
-      await loadSavedCards()
+      if (activeView === 'collection') {
+        await loadSavedCards()
+      }
     } catch (err) {
       alert(err?.message || 'Could not save card.')
     } finally {
@@ -465,6 +488,18 @@ function CardWorkspace({ session, onLogout }) {
     }
   }
 
+  const applyArtUrl = () => {
+    const url = artUrlInput.trim()
+    if (!url) return
+
+    if (!/^https?:\/\//i.test(url) && !url.startsWith('data:image/')) {
+      alert('Please enter a valid image URL (http/https) or a data URL.')
+      return
+    }
+
+    setImageUrl(url)
+  }
+
   const exportPNG = async () => {
     const el = cardRef.current
     if (!el) return
@@ -476,7 +511,11 @@ function CardWorkspace({ session, onLogout }) {
       el.style.transform = 'none'
       el.style.transformOrigin = 'top left'
 
-      const dataUrl = await htmlToImage.toPng(el, { pixelRatio: 2, cacheBust: true })
+      const dataUrl = await htmlToImage.toPng(el, {
+        pixelRatio: 2,
+        cacheBust: true,
+        imagePlaceholder: DEFAULT_ART_DATA_URL,
+      })
       const res = await fetch(dataUrl)
       const blob = await res.blob()
       downloadBlob(blob, 'card.png')
@@ -500,7 +539,11 @@ function CardWorkspace({ session, onLogout }) {
       el.style.transform = 'none'
       el.style.transformOrigin = 'top left'
 
-      const dataUrl = await htmlToImage.toPng(el, { pixelRatio: 2, cacheBust: true })
+      const dataUrl = await htmlToImage.toPng(el, {
+        pixelRatio: 2,
+        cacheBust: true,
+        imagePlaceholder: DEFAULT_ART_DATA_URL,
+      })
 
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [606, 1039] })
       pdf.addImage(dataUrl, 'PNG', 0, 0, 606, 1039)
@@ -514,12 +557,86 @@ function CardWorkspace({ session, onLogout }) {
     }
   }
 
+  const openCollection = async () => {
+    setActiveView('collection')
+    await loadSavedCards()
+  }
+
+  if (activeView === 'collection') {
+    return (
+      <div className="page">
+        <div className="session-row">
+          <h1 className="page-title">Saved Cards Collection</h1>
+          <div className="session-user-row">
+            <span className="session-user">User: {session.username}</span>
+            <button type="button" className="btn session-logout" onClick={onBackToMenu}>
+              Menu
+            </button>
+            <button type="button" className="btn session-logout" onClick={onLogout}>
+              Log out
+            </button>
+          </div>
+        </div>
+
+        <div className="collection-layout">
+          <div className="assets-panel">
+            <div className="saved-title">My saved cards</div>
+            <div className="saved-list collection-list">
+              {loadingCards && <div className="saved-empty">Loading cards...</div>}
+              {!loadingCards && savedCards.length === 0 && (
+                <div className="saved-empty">No saved cards yet.</div>
+              )}
+              {savedCards.map((card) => (
+                <div key={card.id} className="saved-item">
+                  <div className="saved-item-meta">
+                    <div className="saved-item-name">{card.name}</div>
+                    <div className="saved-item-date">
+                      {card.updatedAt ? new Date(card.updatedAt).toLocaleString() : ''}
+                    </div>
+                  </div>
+                  <div className="saved-item-actions">
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        applyCardState(card.state)
+                        setActiveView('generator')
+                      }}
+                    >
+                      Load in Generator
+                    </button>
+                    <button
+                      type="button"
+                      className="btn danger"
+                      onClick={() => deleteSavedCard(card.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="collection-actions">
+              <button type="button" className="btn" onClick={() => setActiveView('generator')}>
+                Go to Generator
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="page">
       <div className="session-row">
         <h1 className="page-title">Card Generator - Profe Inti</h1>
         <div className="session-user-row">
           <span className="session-user">User: {session.username}</span>
+          <button type="button" className="btn session-logout" onClick={onBackToMenu}>
+            Menu
+          </button>
           <button type="button" className="btn session-logout" onClick={onLogout}>
             Log out
           </button>
@@ -595,63 +712,27 @@ function CardWorkspace({ session, onLogout }) {
           <div className="sliders">
             <div className="slider">
               <span>Art top: {artTop}px</span>
-              <input
-                type="range"
-                min="0"
-                max="500"
-                value={artTop}
-                onChange={(e) => setArtTop(Number(e.target.value))}
-              />
+              <input type="range" min="0" max="500" value={artTop} onChange={(e) => setArtTop(Number(e.target.value))} />
             </div>
             <div className="slider">
               <span>Art left: {artLeft}px</span>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={artLeft}
-                onChange={(e) => setArtLeft(Number(e.target.value))}
-              />
+              <input type="range" min="0" max="200" value={artLeft} onChange={(e) => setArtLeft(Number(e.target.value))} />
             </div>
             <div className="slider">
               <span>Art width: {artWidth}px</span>
-              <input
-                type="range"
-                min="200"
-                max="606"
-                value={artWidth}
-                onChange={(e) => setArtWidth(Number(e.target.value))}
-              />
+              <input type="range" min="200" max="606" value={artWidth} onChange={(e) => setArtWidth(Number(e.target.value))} />
             </div>
             <div className="slider">
               <span>Art height: {artHeight}px</span>
-              <input
-                type="range"
-                min="150"
-                max="600"
-                value={artHeight}
-                onChange={(e) => setArtHeight(Number(e.target.value))}
-              />
+              <input type="range" min="150" max="600" value={artHeight} onChange={(e) => setArtHeight(Number(e.target.value))} />
             </div>
             <div className="slider">
               <span>{`Title top: ${titleTop}px`}</span>
-              <input
-                type="range"
-                min="0"
-                max="300"
-                value={titleTop}
-                onChange={(e) => setTitleTop(Number(e.target.value))}
-              />
+              <input type="range" min="0" max="300" value={titleTop} onChange={(e) => setTitleTop(Number(e.target.value))} />
             </div>
             <div className="slider">
               <span>{`Description top: ${descTop}px`}</span>
-              <input
-                type="range"
-                min="350"
-                max="980"
-                value={descTop}
-                onChange={(e) => setDescTop(Number(e.target.value))}
-              />
+              <input type="range" min="350" max="980" value={descTop} onChange={(e) => setDescTop(Number(e.target.value))} />
             </div>
             <button
               type="button"
@@ -686,6 +767,18 @@ function CardWorkspace({ session, onLogout }) {
               }}
             />
           </label>
+
+          <label className="field">
+            <span>Art image URL (recommended to save Supabase space)</span>
+            <input
+              type="url"
+              value={artUrlInput}
+              onChange={(e) => setArtUrlInput(e.target.value)}
+              placeholder="https://..."
+            />
+            <button type="button" className="btn" onClick={applyArtUrl}>Use URL</button>
+          </label>
+
           <div className="rarity-selector">
             <div className="rarity-title">Rarity (Frame)</div>
             <div className="rarity-options">
@@ -703,100 +796,75 @@ function CardWorkspace({ session, onLogout }) {
               ))}
             </div>
           </div>
+
           <div className="export-row">
-            <button type="button" className="btn" onClick={exportPNG}>
-              Export PNG
-            </button>
-            <button type="button" className="btn" onClick={exportPDF}>
-              Export PDF
-            </button>
-            <button type="button" className="btn" onClick={exportJSON}>
-              Export JSON
-            </button>
-            <button type="button" className="btn" onClick={triggerImport}>
-              Import JSON
-            </button>
-            <input
-              ref={importRef}
-              type="file"
-              accept="application/json"
-              style={{ display: 'none' }}
-              onChange={onImportFile}
-            />
+            <button type="button" className="btn" onClick={exportPNG}>Export PNG</button>
+            <button type="button" className="btn" onClick={exportPDF}>Export PDF</button>
+            <button type="button" className="btn" onClick={exportJSON}>Export JSON</button>
+            <button type="button" className="btn" onClick={triggerImport}>Import JSON</button>
+            <input ref={importRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={onImportFile} />
           </div>
+
           <div className="saved-section">
-            <div className="saved-title">My saved cards</div>
+            <div className="saved-title">Save current card</div>
             <div className="saved-save-row">
-              <input
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-                placeholder="Save name"
-              />
-              <button
-                type="button"
-                className="btn"
-                onClick={saveCardForUser}
-                disabled={savingCard}
-              >
-                {savingCard ? 'Saving...' : 'Save to account'}
+              <input value={saveName} onChange={(e) => setSaveName(e.target.value)} placeholder="Save name" />
+              <button type="button" className="btn" onClick={saveCardForUser} disabled={savingCard}>
+                {savingCard ? 'Saving...' : 'Save'}
               </button>
             </div>
-            <div className="saved-list">
-              {loadingCards && <div className="saved-empty">Loading cards...</div>}
-              {!loadingCards && savedCards.length === 0 && (
-                <div className="saved-empty">No saved cards yet.</div>
-              )}
-              {savedCards.map((card) => (
-                <div key={card.id} className="saved-item">
-                  <div className="saved-item-meta">
-                    <div className="saved-item-name">{card.name}</div>
-                    <div className="saved-item-date">
-                      {card.updatedAt ? new Date(card.updatedAt).toLocaleString() : ''}
-                    </div>
-                  </div>
-                  <div className="saved-item-actions">
-                    <button type="button" className="btn" onClick={() => applyCardState(card.state)}>
-                      Load
-                    </button>
-                    <button
-                      type="button"
-                      className="btn danger"
-                      onClick={() => deleteSavedCard(card.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <button type="button" className="btn" onClick={openCollection}>
+              Open Collection
+            </button>
           </div>
         </div>
 
         <div className="preview-wrap">
           <div className="card" ref={cardRef}>
-            <div
-              className="art"
-              style={{ top: artTop, left: artLeft, width: artWidth, height: artHeight, right: 'auto' }}
-            >
-              <img src={imageUrl} alt="Art" />
+            <div className="art" style={{ top: artTop, left: artLeft, width: artWidth, height: artHeight, right: 'auto' }}>
+              <img src={imageUrl} alt="Art" onError={(e) => { e.currentTarget.onerror = null; setImageUrl(DEFAULT_ART_DATA_URL) }} />
             </div>
             <img className="frame" src={frame} alt="Frame" />
             <div className="title-box" style={{ top: titleTop }}>
-              <h2
-                className="card-title"
-                style={{ color: titleColor, fontFamily: titleFontFamily, fontSize: `${titleFontSize}px` }}
-              >
-                {title}
-              </h2>
+              <h2 className="card-title" style={{ color: titleColor, fontFamily: titleFontFamily, fontSize: `${titleFontSize}px` }}>{title}</h2>
             </div>
             <div className="desc-box" style={{ top: descTop }}>
-              <div
-                className="card-description"
-                style={{ fontFamily: descFontFamily, fontSize: `${descFontSize}px` }}
-                dangerouslySetInnerHTML={{ __html: renderedDescription }}
-              />
+              <div className="card-description" style={{ fontFamily: descFontFamily, fontSize: `${descFontSize}px` }} dangerouslySetInnerHTML={{ __html: renderedDescription }} />
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WelcomeScreen({ onContinue }) {
+  return (
+    <div className="welcome-shell">
+      <div className="welcome-card">
+        <p className="welcome-overline">INTICORE PLATFORM</p>
+        <h1 className="welcome-title">Welcome to Inticore</h1>
+        <p className="welcome-subtitle">Design, save and manage your custom cards from any device.</p>
+        <button type="button" className="btn welcome-btn" onClick={onContinue}>Get Started</button>
+      </div>
+    </div>
+  )
+}
+
+function AppMenu({ session, onOpenGenerator, onOpenCollection, onLogout }) {
+  return (
+    <div className="menu-shell">
+      <div className="menu-card">
+        <div className="menu-top">
+          <h1 className="menu-title">Welcome to Inticore</h1>
+          <span className="session-user">User: {session.username}</span>
+        </div>
+        <p className="menu-subtitle">Choose where you want to go.</p>
+
+        <div className="menu-actions">
+          <button type="button" className="btn menu-btn" onClick={onOpenGenerator}>Card Generator</button>
+          <button type="button" className="btn menu-btn" onClick={onOpenCollection}>Saved Collection</button>
+          <button type="button" className="btn menu-btn" onClick={onLogout}>Log out</button>
         </div>
       </div>
     </div>
@@ -806,76 +874,148 @@ function CardWorkspace({ session, onLogout }) {
 function App() {
   const [session, setSession] = useState(null)
   const [bootLoading, setBootLoading] = useState(true)
+  const [entryScreen, setEntryScreen] = useState('welcome')
+  const [workspaceTarget, setWorkspaceTarget] = useState(null)
+  const bootstrapRunIdRef = useRef(0)
 
-  const hydrateSessionFromUser = async (user) => {
+  const setSessionFromUser = (user, username) => {
+    const next = {
+      userId: user.id,
+      email: user.email,
+      username,
+    }
+    console.log('[session] set session', { userId: next.userId, username: next.username })
+    setSession(next)
+  }
+
+  const hydrateSessionFromUser = async (
+    user,
+    { blockOnProfile = true, source = 'unknown' } = {}
+  ) => {
     if (!user) {
+      console.log('[session] clear session', { source })
       setSession(null)
       return
     }
 
-    let username = emailToUsername(user.email)
+    const fallbackUsername = emailToUsername(user.email)
+    setSessionFromUser(user, fallbackUsername)
 
-    try {
-      username = await ensureProfile(user)
-    } catch (error) {
-      console.error('Could not sync profile:', error)
+    if (!blockOnProfile) {
+      console.log('[profile] load scheduled (non-blocking)', { source, userId: user.id })
+      ensureProfile(user)
+        .then((resolvedUsername) => {
+          setSessionFromUser(user, resolvedUsername)
+        })
+        .catch((error) => {
+          console.error('[profile] non-blocking load failed', error)
+        })
+      return
     }
 
-    setSession({
-      userId: user.id,
-      email: user.email,
-      username,
-    })
+    try {
+      console.log('[profile] load awaited (blocking)', { source, userId: user.id })
+      const resolvedUsername = await ensureProfile(user)
+      setSessionFromUser(user, resolvedUsername)
+    } catch (error) {
+      console.error('[profile] blocking load failed', error)
+    }
   }
 
   useEffect(() => {
     let active = true
+    const runId = ++bootstrapRunIdRef.current
+    console.log('[bootstrap] effect mount', { runId })
 
     const bootstrap = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      try {
+        console.log('[bootstrap] VITE_SUPABASE_URL present:', Boolean(import.meta.env.VITE_SUPABASE_URL))
+        console.log('[bootstrap] VITE_SUPABASE_ANON_KEY present:', Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY))
+        console.log('[bootstrap] before getSession', { runId })
 
-      if (!active) return
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+        console.log('[bootstrap] after getSession', {
+          runId,
+          hasError: Boolean(sessionError),
+          hasSession: Boolean(sessionData?.session),
+          hasUser: Boolean(sessionData?.session?.user),
+          userId: sessionData?.session?.user?.id ?? null,
+        })
 
-      if (user) {
-        await hydrateSessionFromUser(user)
-      } else {
-        setSession(null)
+        if (sessionError) throw sessionError
+        if (!active) return
+
+        const sessionUser = sessionData?.session?.user ?? null
+        if (sessionUser) {
+          await hydrateSessionFromUser(sessionUser, { blockOnProfile: false, source: 'bootstrap' })
+        } else {
+          console.log('[bootstrap] no session user, clearing session')
+          setSession(null)
+        }
+      } catch (error) {
+        console.error('Session bootstrap failed:', error)
+        if (active) setSession(null)
+      } finally {
+        if (active) {
+          console.log('[bootstrap] setBootLoading(false)', { runId })
+          setBootLoading(false)
+        }
       }
-
-      setBootLoading(false)
     }
 
     bootstrap()
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      if (!active) return
+    } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
+      console.log('[bootstrap] auth state change:', {
+        runId,
+        event,
+        hasSession: Boolean(nextSession),
+        userId: nextSession?.user?.id ?? null,
+      })
 
-      if (nextSession?.user) {
-        await hydrateSessionFromUser(nextSession.user)
-      } else {
-        setSession(null)
+      try {
+        if (!active) return
+
+        if (nextSession?.user) {
+          await hydrateSessionFromUser(nextSession.user, {
+            blockOnProfile: false,
+            source: 'auth_state:' + event,
+          })
+        } else {
+          console.log('[bootstrap] auth state cleared session', { runId, event })
+          setSession(null)
+          setWorkspaceTarget(null)
+        }
+      } catch (error) {
+        console.error('Auth state change handler failed:', error)
+        if (active) setSession(null)
+      } finally {
+        if (active) {
+          console.log('[bootstrap] setBootLoading(false) from auth state change', { runId, event })
+          setBootLoading(false)
+        }
       }
-
-      setBootLoading(false)
     })
 
     return () => {
       active = false
+      console.log('[bootstrap] effect cleanup', { runId })
       subscription.unsubscribe()
     }
   }, [])
 
   const handleAuthSuccess = async (user) => {
-    await hydrateSessionFromUser(user)
+    await hydrateSessionFromUser(user, { blockOnProfile: false, source: 'auth_success' })
+    setWorkspaceTarget(null)
   }
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
     setSession(null)
+    setWorkspaceTarget(null)
+    setEntryScreen('welcome')
   }
 
   if (bootLoading) {
@@ -889,9 +1029,33 @@ function App() {
     )
   }
 
-  if (!session) return <AuthScreen onAuthSuccess={handleAuthSuccess} />
+  if (!session) {
+    if (entryScreen === 'welcome') {
+      return <WelcomeScreen onContinue={() => setEntryScreen('auth')} />
+    }
 
-  return <CardWorkspace session={session} onLogout={handleLogout} />
+    return <AuthScreen onAuthSuccess={handleAuthSuccess} />
+  }
+
+  if (!workspaceTarget) {
+    return (
+      <AppMenu
+        session={session}
+        onOpenGenerator={() => setWorkspaceTarget('generator')}
+        onOpenCollection={() => setWorkspaceTarget('collection')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  return (
+    <CardWorkspace
+      session={session}
+      onLogout={handleLogout}
+      initialView={workspaceTarget}
+      onBackToMenu={() => setWorkspaceTarget(null)}
+    />
+  )
 }
 
 export default App

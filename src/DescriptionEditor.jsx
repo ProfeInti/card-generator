@@ -1,7 +1,6 @@
-﻿import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import Underline from '@tiptap/extension-underline'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
 
@@ -13,7 +12,7 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
   const fileInputRef = useRef(null)
 
   const editor = useEditor({
-    extensions: [StarterKit, Underline, TextStyle, Color, ResizableImageNode, MathInlineNode],
+    extensions: [StarterKit, TextStyle, Color, ResizableImageNode, MathInlineNode],
     content: value,
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   })

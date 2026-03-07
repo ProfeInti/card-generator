@@ -432,21 +432,26 @@ body {
   inset: 0;
   background: rgba(0,0,0,0.6);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  z-index: 9000;
+  padding: clamp(14px, 4vh, 42px) 16px 320px;
+  overflow: auto;
+  box-sizing: border-box;
+  z-index: 30000;
   pointer-events: none;
 }
 
 .math-modal {
   position: relative;
   width: min(720px, 92vw);
+  max-height: min(68vh, 620px);
+  overflow: auto;
   background: #121212;
   border: 1px solid #333;
   border-radius: 14px;
   padding: 12px;
   color: #fff;
-  z-index: 9001;
+  z-index: 30010;
   pointer-events: auto;
 }
 
@@ -468,6 +473,15 @@ body {
   margin-top: 10px;
 }
 
+.math-modal-actions-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 8px 0;
+  margin-top: 0;
+  background: linear-gradient(180deg, rgba(18,18,18,0.98) 0%, rgba(18,18,18,0.9) 100%);
+}
+
 .math-hint {
   margin-top: 10px;
   color: #bdbdbd;
@@ -477,7 +491,7 @@ body {
 math-virtual-keyboard,
 .ML__keyboard,
 .ML__virtual-keyboard {
-  z-index: 10000 !important;
+  z-index: 29000 !important;
   pointer-events: auto !important;
 }
 
@@ -741,4 +755,114 @@ math-virtual-keyboard,
 
 .btn.danger:hover {
   border-color: #ff6a6a;
+}
+
+/* =========================
+   Welcome & Main Menu
+========================= */
+.welcome-shell,
+.menu-shell {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(0, 255, 136, 0.08), transparent 38%),
+    radial-gradient(circle at 80% 80%, rgba(0, 190, 255, 0.08), transparent 42%),
+    #141414;
+}
+
+.welcome-card,
+.menu-card {
+  width: min(700px, 96vw);
+  border: 1px solid #2d2d2d;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #1f1f1f 0%, #131313 100%);
+  padding: 28px;
+  box-shadow: 0 24px 44px rgba(0, 0, 0, 0.35);
+}
+
+.welcome-overline {
+  margin: 0;
+  color: #8ee9c3;
+  letter-spacing: 1.8px;
+  font-size: 11px;
+}
+
+.welcome-title,
+.menu-title {
+  margin: 8px 0;
+  color: #fff;
+  font-size: clamp(30px, 6vw, 48px);
+  line-height: 1.05;
+}
+
+.welcome-subtitle,
+.menu-subtitle {
+  margin: 0;
+  color: #c4c4c4;
+  font-size: 14px;
+  max-width: 620px;
+}
+
+.welcome-btn {
+  margin-top: 20px;
+  min-width: 170px;
+}
+
+.menu-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.menu-actions {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.menu-btn {
+  margin-top: 0;
+}
+
+.collection-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 760px);
+  gap: 24px;
+  justify-content: center;
+}
+
+.collection-list {
+  max-height: 60vh;
+}
+
+.collection-actions {
+  margin-top: 12px;
+}
+
+@media (max-width: 820px) {
+  .menu-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .menu-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+
+@media (max-height: 820px) {
+  .math-modal-backdrop {
+    padding-bottom: 270px;
+  }
+
+  .math-modal {
+    max-height: min(64vh, 560px);
+  }
 }
