@@ -3,16 +3,39 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
+import { Table } from '@tiptap/extension-table'
+import TableRow from '@tiptap/extension-table-row'
+import TableHeader from '@tiptap/extension-table-header'
+import TableCell from '@tiptap/extension-table-cell'
 
 import MathInlineNode from './MathInlineNode'
 import ResizableImageNode from './ResizableImageNode'
 
+function toPositiveInt(value, fallback) {
+  const n = Number(value)
+  if (!Number.isInteger(n) || n <= 0) return fallback
+  return n
+}
+
 export default function DescriptionEditor({ value, onChange, baseFontFamily, baseFontSize }) {
   const [textColor, setTextColor] = useState('#b6fff0')
+  const [imageUrlInput, setImageUrlInput] = useState('')
   const fileInputRef = useRef(null)
 
   const editor = useEditor({
-    extensions: [StarterKit, TextStyle, Color, ResizableImageNode, MathInlineNode],
+    extensions: [
+      StarterKit,
+      TextStyle,
+      Color,
+      ResizableImageNode,
+      MathInlineNode,
+      Table.configure({
+        resizable: true,
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
+    ],
     content: value,
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   })
@@ -28,11 +51,25 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
     editor.chain().focus().insertContent({ type: 'mathInline', attrs: { latex } }).run()
   }
 
-  const insertImageByUrl = () => {
+  const insertImageByUrl = (rawUrl) => {
     if (!editor) return
-    const url = window.prompt('Paste the image URL:')
+    const url = String(rawUrl || '').trim()
     if (!url) return
     editor.chain().focus().setImage({ src: url }).run()
+    setImageUrlInput('')
+  }
+
+  const insertTable = () => {
+    if (!editor) return
+
+    const rows = toPositiveInt(window.prompt('Table rows:', '2'), 2)
+    const cols = toPositiveInt(window.prompt('Table columns:', '2'), 2)
+
+    editor
+      .chain()
+      .focus()
+      .insertTable({ rows, cols, withHeaderRow: true })
+      .run()
   }
 
   const onPickImageFile = async (e) => {
@@ -111,14 +148,29 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
 
         <div className="rt-sep" />
 
+        <input
+          className="rt-url-input"
+          type="url"
+          value={imageUrlInput}
+          onChange={(e) => setImageUrlInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              insertImageByUrl(imageUrlInput)
+            }
+          }}
+          placeholder="https://image-url"
+          title="Image URL"
+        />
+
         <button
           type="button"
           className="rt-btn"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={insertImageByUrl}
+          onClick={() => insertImageByUrl(imageUrlInput)}
           title="Insert image by URL"
         >
-          Img URL
+          Add Img URL
         </button>
 
         <button
@@ -138,6 +190,73 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
           style={{ display: 'none' }}
           onChange={onPickImageFile}
         />
+
+        <div className="rt-sep" />
+
+        <button
+          type="button"
+          className="rt-btn"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={insertTable}
+          title="Insert table"
+        >
+          Table
+        </button>
+
+        <button
+          type="button"
+          className="rt-btn"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => editor.chain().focus().addColumnAfter().run()}
+          disabled={!editor.isActive('table')}
+          title="Add column"
+        >
+          +Col
+        </button>
+
+        <button
+          type="button"
+          className="rt-btn"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => editor.chain().focus().addRowAfter().run()}
+          disabled={!editor.isActive('table')}
+          title="Add row"
+        >
+          +Row
+        </button>
+
+        <button
+          type="button"
+          className="rt-btn"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => editor.chain().focus().deleteColumn().run()}
+          disabled={!editor.isActive('table')}
+          title="Delete column"
+        >
+          -Col
+        </button>
+
+        <button
+          type="button"
+          className="rt-btn"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => editor.chain().focus().deleteRow().run()}
+          disabled={!editor.isActive('table')}
+          title="Delete row"
+        >
+          -Row
+        </button>
+
+        <button
+          type="button"
+          className="rt-btn"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => editor.chain().focus().deleteTable().run()}
+          disabled={!editor.isActive('table')}
+          title="Delete table"
+        >
+          Del Table
+        </button>
 
         <div className="rt-sep" />
 
@@ -182,7 +301,7 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
           &int;
         </button>
 
-        <div className="rt-hint">Tip: click image - select frame and drag corner. Up to 2 images per row.</div>
+        <div className="rt-hint">Tip: use image URL/upload and tables for graph statements and structured data.</div>
       </div>
 
       <div

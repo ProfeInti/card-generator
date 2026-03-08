@@ -1,4 +1,4 @@
-﻿
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 
@@ -9,9 +9,20 @@ import frameLegendary from './assets/frame-legendary.png'
 import frameMythic from './assets/frame-mythic.png'
 
 import DescriptionEditor from './DescriptionEditor'
+import CompetitiveExerciseEditor from './CompetitiveExerciseEditor'
+import CompetitiveReviewPanel from './CompetitiveReviewPanel'
+import CompetitiveTechniqueEditor from './CompetitiveTechniqueEditor'
+import CompetitiveTechniqueReviewPanel from './CompetitiveTechniqueReviewPanel'
+import CompetitiveExercisesCollection from './CompetitiveExercisesCollection'
+import CompetitiveTechniquesCollection from './CompetitiveTechniquesCollection'
+import ConstructGenerator from './ConstructGenerator'
+import CompetitiveConstructsCollection from './CompetitiveConstructsCollection'
+import CompetitiveConstructReviewPanel from './CompetitiveConstructReviewPanel'
+import CompetitiveTrainingMode from './CompetitiveTrainingMode'
+import { COMPETITIVE_SECTIONS, CompetitiveModeShell, CreativeModeShell, MainMenu } from './components/ModeShells'
 
 import 'katex/dist/katex.min.css'
-import katex from 'katex'
+import { renderMathInHtml } from './lib/mathHtml'
 
 import * as htmlToImage from 'html-to-image'
 import jsPDF from 'jspdf'
@@ -36,6 +47,7 @@ const DEFAULTS = {
   titleFontFamily: FONT_OPTIONS[0].value,
   titleFontSize: 34,
   description: '<p><span style="color:#b6fff0">This is the card description.</span></p>',
+  descTextAlign: 'left',
   descFontFamily: FONT_OPTIONS[0].value,
   descFontSize: 20,
   imageUrl: DEFAULT_ART_DATA_URL,
@@ -91,6 +103,7 @@ const EFFECT_TYPE_SUGGESTIONS = [
 const DIFFICULTY_SUGGESTIONS = ['Beginner', 'Intermediate', 'Advanced', 'Olympiad']
 
 const RARITY_SUGGESTIONS = ['Common', 'Rare', 'Epic', 'Legendary', 'Mythic']
+const DESCRIPTION_ALIGN_OPTIONS = ['left', 'center', 'right', 'justify']
 
 function toNumber(v, fallback) {
   const n = Number(v)
@@ -100,25 +113,6 @@ function toNumber(v, fallback) {
 function decodeUnicodeEscapes(text) {
   if (typeof text !== 'string') return text
   return text.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-}
-
-function renderDescriptionMath(html) {
-  if (typeof window === 'undefined') return html
-
-  const parser = new window.DOMParser()
-  const doc = parser.parseFromString(html, 'text/html')
-
-  const nodes = doc.querySelectorAll('span[data-type="math-inline"]')
-  nodes.forEach((el) => {
-    const latex = el.getAttribute('data-latex') || ''
-    try {
-      el.innerHTML = katex.renderToString(latex, { throwOnError: false })
-    } catch {
-      el.textContent = latex
-    }
-  })
-
-  return doc.body.innerHTML
 }
 
 function sanitizeMetaText(value) {
@@ -212,22 +206,42 @@ async function ensureProfile(user) {
     throw upsertError
   }
 
-  const { data, error } = await supabase
+  let data = null
+  let error = null
+
+  const roleQuery = await supabase
     .from('profiles')
-    .select('username')
+    .select('username, role')
     .eq('id', user.id)
     .maybeSingle()
+
+  data = roleQuery.data
+  error = roleQuery.error
+
+  if (error && String(error.message || '').toLowerCase().includes('role')) {
+    const legacyQuery = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    data = legacyQuery.data
+    error = legacyQuery.error
+  }
 
   if (error) {
     console.error('[profile] select error', error)
     throw error
   }
 
-  const resolvedUsername = data?.username || fallbackUsername
-  console.log('[profile] load done', { userId: user?.id ?? null, resolvedUsername })
-  return resolvedUsername
-}
+  const resolvedProfile = {
+    username: data?.username || fallbackUsername,
+    role: data?.role === 'teacher' ? 'teacher' : 'student',
+  }
 
+  console.log('[profile] load done', { userId: user?.id ?? null, resolvedProfile })
+  return resolvedProfile
+}
 function AuthScreen({ onAuthSuccess }) {
   const [mode, setMode] = useState('login')
   const [email, setEmail] = useState('')
@@ -377,6 +391,7 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
   const [titleFontSize, setTitleFontSize] = useState(DEFAULTS.titleFontSize)
 
   const [description, setDescription] = useState(DEFAULTS.description)
+  const [descTextAlign, setDescTextAlign] = useState(DEFAULTS.descTextAlign)
   const [descFontFamily, setDescFontFamily] = useState(DEFAULTS.descFontFamily)
   const [descFontSize, setDescFontSize] = useState(DEFAULTS.descFontSize)
 
@@ -424,7 +439,7 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
     setActiveView(initialView)
   }, [initialView])
 
-  const renderedDescription = useMemo(() => renderDescriptionMath(description), [description])
+  const renderedDescription = useMemo(() => renderMathInHtml(description), [description])
 
   const applyMetadataFromSource = (source) => {
     const metadata = source?.metadata && typeof source.metadata === 'object' ? source.metadata : source
@@ -553,6 +568,7 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
     titleFontFamily,
     titleFontSize,
     description,
+    descTextAlign,
     descFontFamily,
     descFontSize,
     imageUrl,
@@ -583,6 +599,11 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
     setTitleFontSize(toNumber(data.titleFontSize, DEFAULTS.titleFontSize))
 
     if (typeof data.description === 'string') setDescription(decodeUnicodeEscapes(data.description))
+    if (typeof data.descTextAlign === 'string' && DESCRIPTION_ALIGN_OPTIONS.includes(data.descTextAlign)) {
+      setDescTextAlign(data.descTextAlign)
+    } else {
+      setDescTextAlign(DEFAULTS.descTextAlign)
+    }
     if (typeof data.descFontFamily === 'string') setDescFontFamily(data.descFontFamily)
     setDescFontSize(toNumber(data.descFontSize, DEFAULTS.descFontSize))
 
@@ -1016,6 +1037,16 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
             />
           </label>
           <label className="field">
+            <span>Description align</span>
+            <select value={descTextAlign} onChange={(e) => setDescTextAlign(e.target.value)}>
+              {DESCRIPTION_ALIGN_OPTIONS.map((align) => (
+                <option key={align} value={align}>
+                  {align}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
             <span>Rich description</span>
             <DescriptionEditor
               value={description}
@@ -1242,7 +1273,11 @@ function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToM
               <h2 className="card-title" style={{ color: titleColor, fontFamily: titleFontFamily, fontSize: `${titleFontSize}px` }}>{title}</h2>
             </div>
             <div className="desc-box" style={{ top: descTop }}>
-              <div className="card-description" style={{ fontFamily: descFontFamily, fontSize: `${descFontSize}px` }} dangerouslySetInnerHTML={{ __html: renderedDescription }} />
+              <div
+                className="card-description"
+                style={{ fontFamily: descFontFamily, fontSize: `${descFontSize}px`, textAlign: descTextAlign }}
+                dangerouslySetInnerHTML={{ __html: renderedDescription }}
+              />
             </div>
           </div>
         </div>
@@ -1264,26 +1299,6 @@ function WelcomeScreen({ onContinue }) {
   )
 }
 
-function AppMenu({ session, onOpenGenerator, onOpenCollection, onLogout }) {
-  return (
-    <div className="menu-shell">
-      <div className="menu-card">
-        <div className="menu-top">
-          <h1 className="menu-title">Welcome to Inticore</h1>
-          <span className="session-user">User: {session.username}</span>
-        </div>
-        <p className="menu-subtitle">Choose where you want to go.</p>
-
-        <div className="menu-actions">
-          <button type="button" className="btn menu-btn" onClick={onOpenGenerator}>Card Generator</button>
-          <button type="button" className="btn menu-btn" onClick={onOpenCollection}>Saved Collection</button>
-          <button type="button" className="btn menu-btn" onClick={onLogout}>Log out</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function App() {
   const [session, setSession] = useState(null)
   const [bootLoading, setBootLoading] = useState(true)
@@ -1291,13 +1306,30 @@ function App() {
   const [workspaceTarget, setWorkspaceTarget] = useState(null)
   const bootstrapRunIdRef = useRef(0)
 
-  const setSessionFromUser = (user, username) => {
+  const setSessionFromUser = (user, profileInput) => {
+    const fallbackUsername = emailToUsername(user?.email)
+    const normalizedUsername =
+      typeof profileInput === 'string'
+        ? profileInput
+        : typeof profileInput?.username === 'string' && profileInput.username
+          ? profileInput.username
+          : fallbackUsername
+
+    const normalizedRole =
+      typeof profileInput === 'object' && profileInput?.role === 'teacher' ? 'teacher' : 'student'
+
     const next = {
       userId: user.id,
       email: user.email,
-      username,
+      username: normalizedUsername,
+      role: normalizedRole,
     }
-    console.log('[session] set session', { userId: next.userId, username: next.username })
+
+    console.log('[session] set session', {
+      userId: next.userId,
+      username: next.username,
+      role: next.role,
+    })
     setSession(next)
   }
 
@@ -1452,23 +1484,243 @@ function App() {
 
   if (!workspaceTarget) {
     return (
-      <AppMenu
+      <MainMenu
         session={session}
-        onOpenGenerator={() => setWorkspaceTarget('generator')}
-        onOpenCollection={() => setWorkspaceTarget('collection')}
+        onOpenCreative={() => setWorkspaceTarget('creative')}
+        onOpenCompetitive={() => setWorkspaceTarget('competitive')}
         onLogout={handleLogout}
       />
     )
   }
 
+  if (workspaceTarget === 'creative') {
+    return (
+      <CreativeModeShell
+        session={session}
+        onOpenGenerator={() => setWorkspaceTarget('creative-generator')}
+        onOpenCollection={() => setWorkspaceTarget('creative-collection')}
+        onBack={() => setWorkspaceTarget(null)}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'competitive-exercises') {
+    return (
+      <CompetitiveExerciseEditor
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'competitive-exercises-collection') {
+    return (
+      <CompetitiveExercisesCollection
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onOpenEditor={() => setWorkspaceTarget('competitive-exercises')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'competitive-construct-generator') {
+    return (
+      <ConstructGenerator
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'competitive-constructs-collection') {
+    return (
+      <CompetitiveConstructsCollection
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onOpenGenerator={() => setWorkspaceTarget('competitive-construct-generator')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+  if (workspaceTarget === 'competitive-techniques') {
+    return (
+      <CompetitiveTechniqueEditor
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'competitive-techniques-collection') {
+    return (
+      <CompetitiveTechniquesCollection
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onOpenEditor={() => setWorkspaceTarget('competitive-techniques')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'competitive-review' || workspaceTarget === 'competitive-exercises-review') {
+    if (session.role !== 'teacher') {
+      return (
+        <CompetitiveModeShell
+          session={session}
+          activeSectionId={COMPETITIVE_SECTIONS[0].id}
+          onSelectSection={(nextSectionId) => setWorkspaceTarget(nextSectionId)}
+          onOpenExercisesReview={() => setWorkspaceTarget('competitive-exercises-review')}
+          onOpenTechniquesReview={() => setWorkspaceTarget('competitive-techniques-review')}
+          onOpenConstructsReview={() => setWorkspaceTarget('competitive-constructs-review')}
+          onBack={() => setWorkspaceTarget(null)}
+          onLogout={handleLogout}
+        />
+      )
+    }
+
+    return (
+      <CompetitiveReviewPanel
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'competitive-techniques-review') {
+    if (session.role !== 'teacher') {
+      return (
+        <CompetitiveModeShell
+          session={session}
+          activeSectionId={'competitive-techniques'}
+          onSelectSection={(nextSectionId) => setWorkspaceTarget(nextSectionId)}
+          onOpenExercisesReview={() => setWorkspaceTarget('competitive-exercises-review')}
+          onOpenTechniquesReview={() => setWorkspaceTarget('competitive-techniques-review')}
+          onOpenConstructsReview={() => setWorkspaceTarget('competitive-constructs-review')}
+          onBack={() => setWorkspaceTarget(null)}
+          onLogout={handleLogout}
+        />
+      )
+    }
+
+    return (
+      <CompetitiveTechniqueReviewPanel
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'competitive-constructs-review') {
+    if (session.role !== 'teacher') {
+      return (
+        <CompetitiveModeShell
+          session={session}
+          activeSectionId={'competitive-constructs-collection'}
+          onSelectSection={(nextSectionId) => setWorkspaceTarget(nextSectionId)}
+          onOpenExercisesReview={() => setWorkspaceTarget('competitive-exercises-review')}
+          onOpenTechniquesReview={() => setWorkspaceTarget('competitive-techniques-review')}
+          onOpenConstructsReview={() => setWorkspaceTarget('competitive-constructs-review')}
+          onBack={() => setWorkspaceTarget(null)}
+          onLogout={handleLogout}
+        />
+      )
+    }
+
+    return (
+      <CompetitiveConstructReviewPanel
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'competitive-training') {
+    return (
+      <CompetitiveTrainingMode
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onLogout={handleLogout}
+      />
+    )
+  }
+  if (workspaceTarget.startsWith('competitive')) {
+    const activeSectionId = workspaceTarget === 'competitive' ? COMPETITIVE_SECTIONS[0].id : workspaceTarget
+
+    return (
+      <CompetitiveModeShell
+        session={session}
+        activeSectionId={activeSectionId}
+        onSelectSection={(nextSectionId) => setWorkspaceTarget(nextSectionId)}
+        onOpenExercisesReview={() => setWorkspaceTarget('competitive-exercises-review')}
+        onOpenTechniquesReview={() => setWorkspaceTarget('competitive-techniques-review')}
+        onOpenConstructsReview={() => setWorkspaceTarget('competitive-constructs-review')}
+        onBack={() => setWorkspaceTarget(null)}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'generator' || workspaceTarget === 'collection') {
+    return (
+      <CardWorkspace
+        session={session}
+        onLogout={handleLogout}
+        initialView={workspaceTarget}
+        onBackToMenu={() => setWorkspaceTarget('creative')}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'creative-generator' || workspaceTarget === 'creative-collection') {
+    const creativeView = workspaceTarget === 'creative-collection' ? 'collection' : 'generator'
+
+    return (
+      <CardWorkspace
+        session={session}
+        onLogout={handleLogout}
+        initialView={creativeView}
+        onBackToMenu={() => setWorkspaceTarget('creative')}
+      />
+    )
+  }
+
   return (
-    <CardWorkspace
+    <MainMenu
       session={session}
+      onOpenCreative={() => setWorkspaceTarget('creative')}
+      onOpenCompetitive={() => setWorkspaceTarget('competitive')}
       onLogout={handleLogout}
-      initialView={workspaceTarget}
-      onBackToMenu={() => setWorkspaceTarget(null)}
     />
   )
 }
 
 export default App
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
