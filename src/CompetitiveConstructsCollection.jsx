@@ -43,7 +43,7 @@ export default function CompetitiveConstructsCollection({ session, onBackToCompe
     try {
       const [ownRows, approvedRows] = await Promise.all([
         listOwnConstructs(session.userId),
-        listApprovedConstructs(),
+        listApprovedConstructs(session.userId),
       ])
 
       setOwnConstructs(ownRows)

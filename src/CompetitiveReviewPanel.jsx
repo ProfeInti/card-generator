@@ -3,6 +3,7 @@ import {
   listProposedCompetitiveExercises,
   reviewProposedCompetitiveExercise,
 } from './data/competitiveExercisesRepo'
+import { listProfileUsernamesByIds } from './data/profilesRepo'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 function formatDate(value) {
@@ -17,6 +18,7 @@ export default function CompetitiveReviewPanel({ session, onBackToCompetitive, o
   const [loading, setLoading] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [creatorNamesById, setCreatorNamesById] = useState({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
@@ -30,6 +32,8 @@ export default function CompetitiveReviewPanel({ session, onBackToCompetitive, o
     [selected?.final_answer]
   )
 
+  const creatorLabel = (id) => creatorNamesById[id] || id || 'Unknown'
+
   const loadProposals = async () => {
     setLoading(true)
     setError('')
@@ -37,6 +41,12 @@ export default function CompetitiveReviewPanel({ session, onBackToCompetitive, o
     try {
       const normalized = await listProposedCompetitiveExercises()
       setItems(normalized)
+      try {
+        const names = await listProfileUsernamesByIds(normalized.map((row) => row.created_by))
+        setCreatorNamesById(names)
+      } catch {
+        setCreatorNamesById({})
+      }
 
       if (!selectedId && normalized.length > 0) {
         setSelectedId(normalized[0].id)
@@ -104,7 +114,7 @@ export default function CompetitiveReviewPanel({ session, onBackToCompetitive, o
                 <div key={item.id} className="saved-item">
                   <div className="saved-item-name">{item.source_title || 'Untitled source'}</div>
                   <div className="saved-item-date">Updated: {formatDate(item.updated_at)}</div>
-                  <div className="saved-item-tags">Creator: {item.created_by}</div>
+                  <div className="saved-item-tags">Creator: {creatorLabel(item.created_by)}</div>
                   <button type="button" className="btn" onClick={() => setSelectedId(item.id)}>
                     Open
                   </button>
@@ -120,7 +130,7 @@ export default function CompetitiveReviewPanel({ session, onBackToCompetitive, o
             <>
               <div className="saved-title">Review detail</div>
               <div className="saved-item-date">Updated: {formatDate(selected.updated_at)}</div>
-              <div className="saved-item-tags">Creator: {selected.created_by}</div>
+              <div className="saved-item-tags">Creator: {creatorLabel(selected.created_by)}</div>
 
               <div className="collection-toolbar" style={{ marginTop: 12 }}>
                 <div className="saved-title">Source</div>

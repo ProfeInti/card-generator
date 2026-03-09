@@ -5,6 +5,7 @@ import {
   listProposedConstructsForReview,
   rejectConstruct,
 } from './data/competitiveConstructsRepo'
+import { listProfileUsernamesByIds } from './data/profilesRepo'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 function formatDate(value) {
@@ -21,12 +22,14 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
   const [detail, setDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [creatorNamesById, setCreatorNamesById] = useState({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
   const selected = items.find((row) => row.id === selectedId) || null
 
   const stepRows = useMemo(() => (Array.isArray(detail?.steps) ? detail.steps : []), [detail?.steps])
+  const creatorLabel = (id) => creatorNamesById[id] || id || 'Unknown'
 
   const loadProposals = async () => {
     setLoading(true)
@@ -35,6 +38,12 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
     try {
       const rows = await listProposedConstructsForReview()
       setItems(rows)
+      try {
+        const names = await listProfileUsernamesByIds(rows.map((row) => row.created_by))
+        setCreatorNamesById(names)
+      } catch {
+        setCreatorNamesById({})
+      }
 
       if (!selectedId && rows.length > 0) {
         setSelectedId(rows[0].id)
@@ -132,7 +141,7 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
               <div key={item.id} className="saved-item">
                 <div className="saved-item-name">{item.title || 'Untitled construct'}</div>
                 <div className="saved-item-date">Updated: {formatDate(item.updated_at)}</div>
-                <div className="saved-item-tags">Creator: {item.created_by}</div>
+                <div className="saved-item-tags">Creator: {creatorLabel(item.created_by)}</div>
                 <button type="button" className="btn" onClick={() => setSelectedId(item.id)}>
                   Open
                 </button>
@@ -149,7 +158,7 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
             <>
               <div className="saved-title">Construct Detail</div>
               <div className="saved-item-date">Updated: {formatDate(detail.construct.updated_at)}</div>
-              <div className="saved-item-tags">Creator: {detail.construct.created_by}</div>
+              <div className="saved-item-tags">Creator: {creatorLabel(detail.construct.created_by)}</div>
               <div className="saved-item-tags">Status: {detail.construct.status}</div>
 
               <div className="collection-toolbar" style={{ marginTop: 12 }}>

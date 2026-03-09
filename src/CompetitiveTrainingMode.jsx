@@ -209,8 +209,8 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
 
     try {
       const [constructRows, techniqueRows] = await Promise.all([
-        listApprovedConstructs(),
-        listApprovedCompetitiveTechniques(),
+        listApprovedConstructs(session.userId),
+        listApprovedCompetitiveTechniques(session.userId),
       ])
 
       setApprovedConstructs(constructRows)

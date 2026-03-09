@@ -89,6 +89,16 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
     reader.readAsDataURL(file)
   }
 
+  const hasSelection = Boolean(editor && !editor.state.selection.empty)
+
+  const toggleInlineMark = (mark) => {
+    if (!editor || !hasSelection) return
+
+    if (mark === 'bold') editor.chain().focus().toggleBold().run()
+    if (mark === 'italic') editor.chain().focus().toggleItalic().run()
+    if (mark === 'underline') editor.chain().focus().toggleUnderline().run()
+  }
+
   if (!editor) return null
 
   return (
@@ -98,7 +108,9 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
           type="button"
           className={`rt-btn ${editor.isActive('bold') ? 'is-on' : ''}`}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().toggleBold().run()}
+          onClick={() => toggleInlineMark('bold')}
+          disabled={!hasSelection}
+          title={hasSelection ? 'Bold selected text' : 'Select text first'}
         >
           B
         </button>
@@ -107,7 +119,9 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
           type="button"
           className={`rt-btn ${editor.isActive('italic') ? 'is-on' : ''}`}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().toggleItalic().run()}
+          onClick={() => toggleInlineMark('italic')}
+          disabled={!hasSelection}
+          title={hasSelection ? 'Italic selected text' : 'Select text first'}
         >
           I
         </button>
@@ -116,7 +130,9 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
           type="button"
           className={`rt-btn ${editor.isActive('underline') ? 'is-on' : ''}`}
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          onClick={() => toggleInlineMark('underline')}
+          disabled={!hasSelection}
+          title={hasSelection ? 'Underline selected text' : 'Select text first'}
         >
           U
         </button>
@@ -316,4 +332,5 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
     </div>
   )
 }
+
 

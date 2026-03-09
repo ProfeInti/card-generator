@@ -23,16 +23,13 @@ export async function createConstruct(payload) {
 }
 
 export async function updateConstruct(constructId, userId, payload) {
-  const query = supabase
+  const { data, error } = await supabase
     .from('competitive_constructs')
     .update(payload)
     .eq('id', constructId)
-
-  if (userId) {
-    query.eq('created_by', userId)
-  }
-
-  const { data, error } = await query.select(CONSTRUCT_SELECT_FIELDS).single()
+    .eq('created_by', userId)
+    .select(CONSTRUCT_SELECT_FIELDS)
+    .single()
 
   if (error) throw error
   return data
@@ -49,20 +46,22 @@ export async function listOwnConstructs(userId) {
   return Array.isArray(data) ? data : []
 }
 
-export async function listVisibleConstructs() {
+export async function listVisibleConstructs(userId) {
   const { data, error } = await supabase
     .from('competitive_constructs')
     .select(CONSTRUCT_SELECT_FIELDS)
+    .eq('created_by', userId)
     .order('updated_at', { ascending: false })
 
   if (error) throw error
   return Array.isArray(data) ? data : []
 }
 
-export async function listApprovedConstructs() {
+export async function listApprovedConstructs(userId) {
   const { data, error } = await supabase
     .from('competitive_constructs')
     .select(CONSTRUCT_SELECT_FIELDS)
+    .eq('created_by', userId)
     .eq('status', 'approved')
     .order('updated_at', { ascending: false })
 

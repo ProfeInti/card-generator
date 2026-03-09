@@ -14,20 +14,22 @@ export async function listOwnCompetitiveTechniques(userId) {
   return Array.isArray(data) ? data : []
 }
 
-export async function listVisibleCompetitiveTechniques() {
+export async function listVisibleCompetitiveTechniques(userId) {
   const { data, error } = await supabase
     .from('competitive_techniques')
     .select(TECHNIQUE_SELECT_FIELDS)
+    .eq('created_by', userId)
     .order('updated_at', { ascending: false })
 
   if (error) throw error
   return Array.isArray(data) ? data : []
 }
 
-export async function listApprovedCompetitiveTechniques() {
+export async function listApprovedCompetitiveTechniques(userId) {
   const { data, error } = await supabase
     .from('competitive_techniques')
     .select(TECHNIQUE_SELECT_FIELDS)
+    .eq('created_by', userId)
     .eq('status', 'approved')
     .order('updated_at', { ascending: false })
 

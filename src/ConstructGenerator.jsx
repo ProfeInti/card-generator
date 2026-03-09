@@ -17,6 +17,7 @@ const STATUS_OPTIONS = ['draft', 'proposed', 'approved', 'rejected']
 const STUDENT_STATUS_OPTIONS = ['draft', 'proposed']
 const DEFAULT_PATH = 'main'
 const MAX_STEPS_PER_PATH = 24
+const TEMP_STEP_ORDER_BASE = 1000000
 
 const EMPTY_FORM = {
   status: 'draft',
@@ -70,15 +71,29 @@ function normalizeStepOrderByPath(steps, targetPath) {
 }
 
 function normalizeAllPaths(steps) {
-  const pathMap = {}
-  return steps.map((step) => {
+  const byPath = new Map()
+
+  steps.forEach((step) => {
     const path = normalizePathKey(step.solutionPath)
-    const nextOrder = (pathMap[path] || 0) + 1
-    pathMap[path] = nextOrder
+    const existing = byPath.get(path) || []
+    existing.push(step)
+    byPath.set(path, existing)
+  })
+
+  const orderByLocalId = new Map()
+  byPath.forEach((rows, path) => {
+    const ordered = [...rows].sort((a, b) => Number(a.stepOrder) - Number(b.stepOrder))
+    ordered.forEach((row, idx) => {
+      orderByLocalId.set(row.localId, { path, stepOrder: idx + 1 })
+    })
+  })
+
+  return steps.map((step) => {
+    const normalized = orderByLocalId.get(step.localId)
     return {
       ...step,
-      solutionPath: path,
-      stepOrder: nextOrder,
+      solutionPath: normalized?.path || normalizePathKey(step.solutionPath),
+      stepOrder: normalized?.stepOrder || 1,
     }
   })
 }
@@ -139,8 +154,8 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     try {
       const [constructRows, exerciseRows, techniqueRows] = await Promise.all([
         listOwnConstructs(session.userId),
-        listApprovedCompetitiveExercises(),
-        listApprovedCompetitiveTechniques(),
+        listApprovedCompetitiveExercises(session.userId),
+        listApprovedCompetitiveTechniques(session.userId),
       ])
 
       setOwnConstructs(constructRows)
@@ -155,7 +170,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
 
   useEffect(() => {
     loadDependencies()
-  }, [session.userId])
+  }, [session.userId, role])
 
   useEffect(() => {
     if (!pathOptions.includes(activePath)) {
@@ -174,7 +189,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     setRemovedStepIds([])
     setActivePath(DEFAULT_PATH)
     setNewPathInput('')
-    setRenamePathInput(nextPath)
+    setRenamePathInput(DEFAULT_PATH)
     setError('')
     setNotice('Ready to create a new construct draft.')
   }
@@ -210,7 +225,8 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
       setActivePath(nextSteps[0]?.solutionPath || DEFAULT_PATH)
       setNewPathInput('')
       setRenamePathInput(nextSteps[0]?.solutionPath || DEFAULT_PATH)
-      setNotice('Construct loaded for editing.')
+      const reviewedRow = role === 'student' && ['approved', 'rejected'].includes(String(row?.status || '').toLowerCase())
+      setNotice(reviewedRow ? 'Reviewed construct loaded as draft. You can edit and propose again.' : 'Construct loaded for editing.')
     } catch (err) {
       setError(err?.message || 'Could not load construct.')
     } finally {
@@ -355,22 +371,43 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
       }
 
       const normalizedSteps = normalizeAllPaths(steps)
-      for (const step of normalizedSteps) {
-        const stepPayload = {
+      const existingSteps = normalizedSteps.filter((step) => Boolean(step.id))
+      const newSteps = normalizedSteps.filter((step) => !step.id)
+
+      // Avoid transient unique collisions while reordering existing steps.
+      for (let idx = 0; idx < existingSteps.length; idx += 1) {
+        const step = existingSteps[idx]
+        await updateConstructStep(step.id, {
+          construct_id: persistedConstruct.id,
+          solution_path: normalizePathKey(step.solutionPath),
+          step_order: TEMP_STEP_ORDER_BASE + idx + 1,
+          technique_id: step.techniqueId,
+          progress_state: String(step.progressState || '').trim(),
+          explanation: String(step.explanation || '').trim() || null,
+        })
+      }
+
+      for (const step of existingSteps) {
+        await updateConstructStep(step.id, {
           construct_id: persistedConstruct.id,
           solution_path: normalizePathKey(step.solutionPath),
           step_order: step.stepOrder,
           technique_id: step.techniqueId,
           progress_state: String(step.progressState || '').trim(),
           explanation: String(step.explanation || '').trim() || null,
-        }
+        })
+      }
 
-        if (step.id) {
-          await updateConstructStep(step.id, stepPayload)
-        } else {
-          const inserted = await addConstructStep(stepPayload)
-          step.id = inserted.id
-        }
+      for (const step of newSteps) {
+        const inserted = await addConstructStep({
+          construct_id: persistedConstruct.id,
+          solution_path: normalizePathKey(step.solutionPath),
+          step_order: step.stepOrder,
+          technique_id: step.techniqueId,
+          progress_state: String(step.progressState || '').trim(),
+          explanation: String(step.explanation || '').trim() || null,
+        })
+        step.id = inserted.id
       }
 
       const refreshedOwn = await listOwnConstructs(session.userId)
@@ -548,6 +585,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                     <label className="field">
                       <span>Progress state *</span>
                       <DescriptionEditor
+                        key={step.localId + '-' + String(step.stepOrder)}
                         value={step.progressState}
                         onChange={(value) => updateStep(step.localId, 'progressState', value)}
                         baseFontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}
@@ -615,6 +653,8 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     </div>
   )
 }
+
+
 
 
 

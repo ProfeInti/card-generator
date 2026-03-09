@@ -40,7 +40,7 @@ export default function CompetitiveExercisesCollection({ session, onBackToCompet
     setError('')
 
     try {
-      const rows = await listVisibleCompetitiveExercises()
+      const rows = await listVisibleCompetitiveExercises(session.userId)
       setItems(rows)
 
       if (!selectedId && rows.length > 0) {

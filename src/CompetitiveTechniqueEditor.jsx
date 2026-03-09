@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import DescriptionEditor from './DescriptionEditor'
 import {
   createCompetitiveTechnique,
@@ -6,6 +6,13 @@ import {
   updateOwnCompetitiveTechnique,
 } from './data/competitiveTechniquesRepo'
 import { extractTextFromHtml, normalizeMathHtmlInput } from './lib/mathHtml'
+import {
+  buildTechniquesTemplateJson,
+  downloadJsonFile,
+  normalizeCompetitiveRichField,
+  parseJsonFile,
+  toAllowedStatus,
+} from './lib/competitiveJson'
 
 const STATUS_OPTIONS = ['draft', 'proposed', 'approved', 'rejected']
 const STUDENT_STATUS_OPTIONS = ['draft', 'proposed']
@@ -78,6 +85,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const importFileRef = useRef(null)
   const [notice, setNotice] = useState('')
 
   const canSave = useMemo(() => {
@@ -101,7 +109,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
 
   useEffect(() => {
     loadTechniques()
-  }, [session.userId])
+  }, [session.userId, role])
 
   const startNewDraft = () => {
     setTechniqueId(null)
@@ -111,14 +119,93 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
   }
 
   const loadIntoForm = (row) => {
+    const reviewedRow = role === 'student' && ['approved', 'rejected'].includes(String(row?.status || '').toLowerCase())
     setTechniqueId(row.id)
     setForm(toFormState(row, role))
     setError('')
-    setNotice('Technique loaded for editing.')
+    setNotice(reviewedRow ? 'Reviewed technique loaded as draft. You can edit and propose again.' : 'Technique loaded for editing.')
   }
 
   const onFormChange = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const exportTechniquesJson = async () => {
+    setError('')
+    setNotice('')
+
+    try {
+      const rows = await listOwnCompetitiveTechniques(session.userId)
+      downloadJsonFile('inticore-competitive-techniques.json', {
+        ...buildTechniquesTemplateJson(),
+        generatedAt: new Date().toISOString(),
+        techniques: rows.map((row) => ({
+          name: row.name || '',
+          topic: row.topic || '',
+          subtopic: row.subtopic || '',
+          effectType: row.effect_type || '',
+          status: row.status || 'draft',
+          effectDescription: row.effect_description || '',
+          workedExample: row.worked_example || '',
+        })),
+      })
+      setNotice('Techniques exported to JSON.')
+    } catch (err) {
+      setError(err?.message || 'Could not export techniques JSON.')
+    }
+  }
+
+  const downloadTechniquesTemplate = () => {
+    downloadJsonFile('inticore-techniques-format.json', buildTechniquesTemplateJson())
+    setNotice('Inticore-compatible technique JSON format downloaded.')
+  }
+
+  const importTechniquesJson = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      const json = await parseJsonFile(file)
+      const records = Array.isArray(json?.techniques) ? json.techniques : []
+      if (!records.length) throw new Error('No techniques found in JSON file.')
+
+      const allowedStatuses = role === 'teacher' ? STATUS_OPTIONS : STUDENT_STATUS_OPTIONS
+      let importedCount = 0
+
+      for (const item of records) {
+        const payload = {
+          created_by: session.userId,
+          status: toAllowedStatus(item?.status, allowedStatuses, 'proposed'),
+          name: String(item?.name || '').trim(),
+          topic: toNullableText(item?.topic),
+          subtopic: toNullableText(item?.subtopic),
+          effect_type: toNullableText(item?.effectType),
+          effect_description: normalizeCompetitiveRichField(item?.effectDescription),
+          worked_example: normalizeCompetitiveRichField(item?.workedExample) || null,
+          reviewed_by: null,
+          approved_at: null,
+        }
+
+        if (!payload.name) continue
+        if (!extractTextFromHtml(payload.effect_description)) continue
+
+        await createCompetitiveTechnique(payload)
+        importedCount += 1
+      }
+
+      if (!importedCount) throw new Error('No valid technique entries found to import.')
+      await loadTechniques()
+      setNotice('Imported ' + importedCount + ' techniques from JSON.')
+    } catch (err) {
+      setError(err?.message || 'Could not import techniques JSON.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const saveTechnique = async () => {
@@ -179,6 +266,22 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
             <button type="button" className="btn" onClick={startNewDraft}>
               New Draft
             </button>
+            <button type="button" className="btn" onClick={exportTechniquesJson}>
+              Export JSON
+            </button>
+            <button type="button" className="btn" onClick={() => importFileRef.current?.click()} disabled={saving}>
+              Import JSON
+            </button>
+            <button type="button" className="btn" onClick={downloadTechniquesTemplate}>
+              Want to create an Inticore-compatible JSON externally? Download the format here
+            </button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept="application/json"
+              style={{ display: 'none' }}
+              onChange={importTechniquesJson}
+            />
           </div>
 
           <div className="saved-list competitive-list">
@@ -266,4 +369,5 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     </div>
   )
 }
+
 

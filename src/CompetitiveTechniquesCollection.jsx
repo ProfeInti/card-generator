@@ -41,7 +41,7 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
     setError('')
 
     try {
-      const rows = await listVisibleCompetitiveTechniques()
+      const rows = await listVisibleCompetitiveTechniques(session.userId)
       setItems(rows)
 
       if (!selectedId && rows.length > 0) {

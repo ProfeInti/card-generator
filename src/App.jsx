@@ -19,6 +19,7 @@ import ConstructGenerator from './ConstructGenerator'
 import CompetitiveConstructsCollection from './CompetitiveConstructsCollection'
 import CompetitiveConstructReviewPanel from './CompetitiveConstructReviewPanel'
 import CompetitiveTrainingMode from './CompetitiveTrainingMode'
+import MultiplayerLobby from './MultiplayerLobby'
 import { COMPETITIVE_SECTIONS, CompetitiveModeShell, CreativeModeShell, MainMenu } from './components/ModeShells'
 
 import 'katex/dist/katex.min.css'
@@ -1488,6 +1489,7 @@ function App() {
         session={session}
         onOpenCreative={() => setWorkspaceTarget('creative')}
         onOpenCompetitive={() => setWorkspaceTarget('competitive')}
+        onOpenMultiplayer={() => setWorkspaceTarget('multiplayer')}
         onLogout={handleLogout}
       />
     )
@@ -1500,6 +1502,16 @@ function App() {
         onOpenGenerator={() => setWorkspaceTarget('creative-generator')}
         onOpenCollection={() => setWorkspaceTarget('creative-collection')}
         onBack={() => setWorkspaceTarget(null)}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'multiplayer') {
+    return (
+      <MultiplayerLobby
+        session={session}
+        onBackToMenu={() => setWorkspaceTarget(null)}
         onLogout={handleLogout}
       />
     )
@@ -1660,7 +1672,8 @@ function App() {
         activeSectionId={activeSectionId}
         onSelectSection={(nextSectionId) => setWorkspaceTarget(nextSectionId)}
         onOpenExercisesReview={() => setWorkspaceTarget('competitive-exercises-review')}
-        onOpenTechniquesReview={() => setWorkspaceTarget('competitive-techniques-review')}
+        onOpenTechniquesReview={() => setWorkspaceTarget('competitive-techniques-review')}
+
         onOpenConstructsReview={() => setWorkspaceTarget('competitive-constructs-review')}
         onBack={() => setWorkspaceTarget(null)}
         onLogout={handleLogout}
@@ -1697,12 +1710,16 @@ function App() {
       session={session}
       onOpenCreative={() => setWorkspaceTarget('creative')}
       onOpenCompetitive={() => setWorkspaceTarget('competitive')}
+      onOpenMultiplayer={() => setWorkspaceTarget('multiplayer')}
       onLogout={handleLogout}
     />
   )
 }
 
 export default App
+
+
+
 
 
 

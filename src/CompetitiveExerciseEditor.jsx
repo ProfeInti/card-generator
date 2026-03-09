@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import DescriptionEditor from './DescriptionEditor'
 import {
   createCompetitiveExercise,
@@ -6,6 +6,13 @@ import {
   updateOwnCompetitiveExercise,
 } from './data/competitiveExercisesRepo'
 import { extractTextFromHtml, normalizeMathHtmlInput } from './lib/mathHtml'
+import {
+  buildExercisesTemplateJson,
+  downloadJsonFile,
+  normalizeCompetitiveRichField,
+  parseJsonFile,
+  toAllowedStatus,
+} from './lib/competitiveJson'
 
 const STATUS_OPTIONS = ['draft', 'proposed', 'approved', 'rejected']
 const STUDENT_STATUS_OPTIONS = ['draft', 'proposed']
@@ -103,6 +110,7 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const importFileRef = useRef(null)
   const [notice, setNotice] = useState('')
 
   const canSave = useMemo(() => {
@@ -126,7 +134,7 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
 
   useEffect(() => {
     loadExercises()
-  }, [session.userId])
+  }, [session.userId, role])
 
   const startNewDraft = () => {
     setExerciseId(null)
@@ -136,14 +144,105 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
   }
 
   const loadIntoForm = (row) => {
+    const reviewedRow = role === 'student' && ['approved', 'rejected'].includes(String(row?.status || '').toLowerCase())
     setExerciseId(row.id)
     setForm(toFormState(row, role))
     setError('')
-    setNotice('Exercise loaded for editing.')
+    setNotice(reviewedRow ? 'Reviewed exercise loaded as draft. You can edit and propose again.' : 'Exercise loaded for editing.')
   }
 
   const onFormChange = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const exportExercisesJson = async () => {
+    setError('')
+    setNotice('')
+
+    try {
+      const rows = await listOwnCompetitiveExercises(session.userId)
+      downloadJsonFile('inticore-competitive-exercises.json', {
+        ...buildExercisesTemplateJson(),
+        generatedAt: new Date().toISOString(),
+        exercises: rows.map((row) => ({
+          sourceTitle: row.source_title || '',
+          sourceType: row.source_type || '',
+          sourceAuthor: row.source_author || '',
+          sourceYear: row.source_year ?? null,
+          sourceLocation: row.source_location || '',
+          pageNumber: row.page_number ?? null,
+          exerciseNumber: row.exercise_number || '',
+          topic: row.topic || '',
+          subtopic: row.subtopic || '',
+          difficulty: row.difficulty || '',
+          status: row.status || 'draft',
+          statement: row.statement || '',
+          finalAnswer: row.final_answer || '',
+        })),
+      })
+      setNotice('Exercises exported to JSON.')
+    } catch (err) {
+      setError(err?.message || 'Could not export exercises JSON.')
+    }
+  }
+
+  const downloadExercisesTemplate = () => {
+    downloadJsonFile('inticore-exercises-format.json', buildExercisesTemplateJson())
+    setNotice('Inticore-compatible exercise JSON format downloaded.')
+  }
+
+  const importExercisesJson = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      const json = await parseJsonFile(file)
+      const records = Array.isArray(json?.exercises) ? json.exercises : []
+      if (!records.length) throw new Error('No exercises found in JSON file.')
+
+      const allowedStatuses = role === 'teacher' ? STATUS_OPTIONS : STUDENT_STATUS_OPTIONS
+      let importedCount = 0
+
+      for (const item of records) {
+        const payload = {
+          created_by: session.userId,
+          status: toAllowedStatus(item?.status, allowedStatuses, 'proposed'),
+          source_title: String(item?.sourceTitle || '').trim(),
+          source_type: toNullableText(item?.sourceType),
+          source_author: toNullableText(item?.sourceAuthor),
+          source_year: toOptionalInt(item?.sourceYear),
+          source_location: toNullableText(item?.sourceLocation),
+          page_number: toOptionalInt(item?.pageNumber),
+          exercise_number: toNullableText(item?.exerciseNumber),
+          statement: normalizeCompetitiveRichField(item?.statement),
+          final_answer: normalizeCompetitiveRichField(item?.finalAnswer) || null,
+          topic: toNullableText(item?.topic),
+          subtopic: toNullableText(item?.subtopic),
+          difficulty: toNullableText(item?.difficulty),
+          reviewed_by: null,
+          approved_at: null,
+        }
+
+        if (!payload.source_title) continue
+        if (!extractTextFromHtml(payload.statement)) continue
+
+        await createCompetitiveExercise(payload)
+        importedCount += 1
+      }
+
+      if (!importedCount) throw new Error('No valid exercise entries found to import.')
+      await loadExercises()
+      setNotice('Imported ' + importedCount + ' exercises from JSON.')
+    } catch (err) {
+      setError(err?.message || 'Could not import exercises JSON.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const saveExercise = async () => {
@@ -204,6 +303,22 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
             <button type="button" className="btn" onClick={startNewDraft}>
               New Draft
             </button>
+            <button type="button" className="btn" onClick={exportExercisesJson}>
+              Export JSON
+            </button>
+            <button type="button" className="btn" onClick={() => importFileRef.current?.click()} disabled={saving}>
+              Import JSON
+            </button>
+            <button type="button" className="btn" onClick={downloadExercisesTemplate}>
+              Want to create an Inticore-compatible JSON externally? Download the format here
+            </button>
+            <input
+              ref={importFileRef}
+              type="file"
+              accept="application/json"
+              style={{ display: 'none' }}
+              onChange={importExercisesJson}
+            />
           </div>
 
           <div className="saved-list competitive-list">
@@ -315,6 +430,7 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
     </div>
   )
 }
+
 
 
 

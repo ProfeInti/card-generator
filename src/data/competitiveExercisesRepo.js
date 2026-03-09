@@ -14,20 +14,22 @@ export async function listOwnCompetitiveExercises(userId) {
   return Array.isArray(data) ? data : []
 }
 
-export async function listVisibleCompetitiveExercises() {
+export async function listVisibleCompetitiveExercises(userId) {
   const { data, error } = await supabase
     .from('competitive_exercises')
     .select(EXERCISE_SELECT_FIELDS)
+    .eq('created_by', userId)
     .order('updated_at', { ascending: false })
 
   if (error) throw error
   return Array.isArray(data) ? data : []
 }
 
-export async function listApprovedCompetitiveExercises() {
+export async function listApprovedCompetitiveExercises(userId) {
   const { data, error } = await supabase
     .from('competitive_exercises')
     .select(EXERCISE_SELECT_FIELDS)
+    .eq('created_by', userId)
     .eq('status', 'approved')
     .order('updated_at', { ascending: false })
 
