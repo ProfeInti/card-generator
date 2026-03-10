@@ -6,6 +6,7 @@ import {
   addConstructStep,
   createConstruct,
   deleteConstructStep,
+  deleteOwnConstruct,
   listConstructSteps,
   listOwnConstructs,
   updateConstruct,
@@ -24,6 +25,9 @@ const EMPTY_FORM = {
   exerciseId: '',
   title: '',
   description: '',
+  attack: '0',
+  armor: '0',
+  effects: '',
 }
 
 function formatDate(value) {
@@ -31,6 +35,14 @@ function formatDate(value) {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return ''
   return parsed.toLocaleString()
+}
+
+function toNonNegativeInt(value, fallback = 0) {
+  const normalized = String(value ?? '').trim()
+  if (!normalized) return fallback
+  const parsed = Number(normalized)
+  if (!Number.isInteger(parsed) || parsed < 0) return null
+  return parsed
 }
 
 function normalizePathKey(value) {
@@ -194,6 +206,28 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     setNotice('Ready to create a new construct draft.')
   }
 
+  const deleteConstruct = async (row) => {
+    if (!row?.id) return
+    if (!window.confirm(`Delete construct "${row.title || 'Untitled construct'}"?`)) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await deleteOwnConstruct(row.id, session.userId)
+      if (constructId === row.id) {
+        startNewConstruct()
+      }
+      await loadDependencies()
+      setNotice('Construct deleted successfully.')
+    } catch (err) {
+      setError(err?.message || 'Could not delete construct.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const loadConstruct = async (row) => {
     setLoading(true)
     setError('')
@@ -207,6 +241,9 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
         exerciseId: String(row.exercise_id || ''),
         title: String(row.title || ''),
         description: String(row.description || ''),
+        attack: String(row.attack ?? 0),
+        armor: String(row.armor ?? 0),
+        effects: String(row.effects || ''),
       })
 
       const normalized = stepRows.map((step) => ({
@@ -247,7 +284,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     if (pathOptions.includes(nextPath)) {
       setActivePath(nextPath)
       setNewPathInput('')
-    setRenamePathInput(nextPath)
+      setRenamePathInput(nextPath)
       return
     }
 
@@ -335,9 +372,10 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
 
   const canSave = useMemo(() => {
     if (!form.exerciseId || !String(form.title || '').trim()) return false
+    if (toNonNegativeInt(form.attack) === null || toNonNegativeInt(form.armor) === null) return false
     if (!steps.length) return false
     return steps.every((step) => step.techniqueId && String(step.progressState || '').trim())
-  }, [form.exerciseId, form.title, steps])
+  }, [form.exerciseId, form.title, form.attack, form.armor, steps])
 
   const saveConstruct = async () => {
     setSaving(true)
@@ -347,6 +385,8 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     try {
       if (!form.exerciseId) throw new Error('You must select an approved exercise.')
       if (!String(form.title || '').trim()) throw new Error('Construct title is required.')
+      if (toNonNegativeInt(form.attack) === null) throw new Error('Attack must be a non-negative integer.')
+      if (toNonNegativeInt(form.armor) === null) throw new Error('Armor must be a non-negative integer.')
       if (!steps.length) throw new Error('At least one step is required.')
 
       const nextStatus = allowedStatuses.includes(form.status) ? form.status : 'draft'
@@ -355,6 +395,9 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
         exercise_id: form.exerciseId,
         title: String(form.title || '').trim(),
         description: String(form.description || '').trim() || null,
+        attack: toNonNegativeInt(form.attack, 0),
+        armor: toNonNegativeInt(form.armor, 0),
+        effects: String(form.effects || '').trim() || null,
         status: nextStatus,
         reviewed_by: role === 'teacher' && (nextStatus === 'approved' || nextStatus === 'rejected') ? session.userId : null,
         approved_at: role === 'teacher' && nextStatus === 'approved' ? new Date().toISOString() : null,
@@ -374,7 +417,6 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
       const existingSteps = normalizedSteps.filter((step) => Boolean(step.id))
       const newSteps = normalizedSteps.filter((step) => !step.id)
 
-      // Avoid transient unique collisions while reordering existing steps.
       for (let idx = 0; idx < existingSteps.length; idx += 1) {
         const step = existingSteps[idx]
         await updateConstructStep(step.id, {
@@ -472,9 +514,15 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                 <div className="saved-item-name">{item.title || 'Untitled construct'}</div>
                 <div className="saved-item-date">Updated: {formatDate(item.updated_at)}</div>
                 <div className="saved-item-tags">Status: {item.status}</div>
-                <button type="button" className="btn" onClick={() => loadConstruct(item)}>
-                  Edit
-                </button>
+                <div className="saved-item-tags">ATK / ARM: {item.attack ?? 0} / {item.armor ?? 0}</div>
+                <div className="saved-item-actions">
+                  <button type="button" className="btn" onClick={() => loadConstruct(item)}>
+                    Edit
+                  </button>
+                  <button type="button" className="btn danger" onClick={() => deleteConstruct(item)} disabled={saving}>
+                    Delete
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -527,6 +575,27 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
           <label className="field">
             <span>Description</span>
             <textarea value={form.description} onChange={(e) => updateFormField('description', e.target.value)} rows={3} />
+          </label>
+
+          <div className="competitive-grid">
+            <label className="field">
+              <span>Attack</span>
+              <input value={form.attack} onChange={(e) => updateFormField('attack', e.target.value)} placeholder="0" />
+            </label>
+            <label className="field">
+              <span>Armor</span>
+              <input value={form.armor} onChange={(e) => updateFormField('armor', e.target.value)} placeholder="0" />
+            </label>
+          </div>
+
+          <label className="field">
+            <span>Effects</span>
+            <textarea
+              value={form.effects}
+              onChange={(e) => updateFormField('effects', e.target.value)}
+              rows={3}
+              placeholder="Optional combat or utility effects"
+            />
           </label>
 
           <div className="saved-title" style={{ marginTop: 8 }}>Solution Paths</div>
@@ -653,20 +722,6 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

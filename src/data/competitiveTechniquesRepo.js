@@ -61,6 +61,17 @@ export async function createCompetitiveTechnique(payload) {
   return data
 }
 
+export async function deleteOwnCompetitiveTechnique(techniqueId, userId) {
+  const { error } = await supabase
+    .from('competitive_techniques')
+    .delete()
+    .eq('id', techniqueId)
+    .eq('created_by', userId)
+
+  if (error) throw error
+  return true
+}
+
 export async function listProposedCompetitiveTechniques() {
   const { data, error } = await supabase
     .from('competitive_techniques')

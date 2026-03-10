@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase'
 
 const EXERCISE_SELECT_FIELDS =
-  'id, created_by, reviewed_by, approved_at, status, source_title, source_type, source_author, source_year, source_location, page_number, exercise_number, statement, final_answer, topic, subtopic, difficulty, created_at, updated_at'
+  'id, created_by, reviewed_by, approved_at, status, source_title, source_work_title, source_type, source_author, source_year, source_location, page_number, exercise_number, statement, final_answer, topic, subtopic, difficulty, created_at, updated_at'
 
 export async function listOwnCompetitiveExercises(userId) {
   const { data, error } = await supabase
@@ -59,6 +59,17 @@ export async function createCompetitiveExercise(payload) {
 
   if (error) throw error
   return data
+}
+
+export async function deleteOwnCompetitiveExercise(exerciseId, userId) {
+  const { error } = await supabase
+    .from('competitive_exercises')
+    .delete()
+    .eq('id', exerciseId)
+    .eq('created_by', userId)
+
+  if (error) throw error
+  return true
 }
 
 export async function listProposedCompetitiveExercises() {

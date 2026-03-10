@@ -191,6 +191,7 @@ export default function CompetitiveExercisesCollection({ session, onBackToCompet
               <div className="collection-toolbar" style={{ marginTop: 12 }}>
                 <div className="saved-title">Source</div>
                 <div className="saved-empty">{selected.source_title || 'N/A'}</div>
+                <div className="saved-empty">Source title: {selected.source_work_title || 'N/A'}</div>
                 <div className="saved-empty">Location: {selected.source_location || 'N/A'}</div>
                 <div className="saved-empty">Page: {selected.page_number || 'N/A'}</div>
                 <div className="saved-empty">Exercise #: {selected.exercise_number || 'N/A'}</div>

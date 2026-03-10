@@ -1,13 +1,13 @@
 import { supabase } from '../lib/supabase'
 
 const CONSTRUCT_SELECT_FIELDS =
-  'id, created_by, exercise_id, title, description, status, created_at, updated_at, reviewed_by, approved_at'
+  'id, created_by, exercise_id, title, description, attack, armor, effects, status, created_at, updated_at, reviewed_by, approved_at'
 
 const CONSTRUCT_STEP_SELECT_FIELDS =
   'id, construct_id, solution_path, step_order, technique_id, progress_state, explanation, created_at'
 
 const EXERCISE_MIN_SELECT_FIELDS =
-  'id, source_title, source_location, page_number, exercise_number, statement, topic, subtopic, difficulty, status'
+  'id, source_title, source_work_title, source_author, source_location, page_number, exercise_number, statement, topic, subtopic, difficulty, status'
 const TECHNIQUE_MIN_SELECT_FIELDS =
   'id, name, topic, subtopic, effect_type, effect_description, status'
 
@@ -118,6 +118,16 @@ export async function rejectConstruct(constructId, teacherUserId) {
   return data
 }
 
+export async function deleteOwnConstruct(constructId, userId) {
+  const { error } = await supabase
+    .from('competitive_constructs')
+    .delete()
+    .eq('id', constructId)
+    .eq('created_by', userId)
+
+  if (error) throw error
+  return true
+}
 export async function listConstructSteps(constructId) {
   const { data, error } = await supabase
     .from('competitive_construct_steps')

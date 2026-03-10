@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import DescriptionEditor from './DescriptionEditor'
 import {
   createCompetitiveTechnique,
+  deleteOwnCompetitiveTechnique,
   listOwnCompetitiveTechniques,
   updateOwnCompetitiveTechnique,
 } from './data/competitiveTechniquesRepo'
-import { extractTextFromHtml, normalizeMathHtmlInput } from './lib/mathHtml'
+import { hasMeaningfulHtmlContent, normalizeMathHtmlInput } from './lib/mathHtml'
 import {
   buildTechniquesTemplateJson,
   downloadJsonFile,
@@ -30,6 +31,14 @@ const EMPTY_FORM = {
 function toInputValue(value) {
   if (value === null || value === undefined) return ''
   return String(value)
+}
+
+function normalizeKey(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function buildTechniqueImportKey(values) {
+  return [values?.name, values?.topic, values?.subtopic].map(normalizeKey).join('||')
 }
 
 function toFormState(row, role) {
@@ -89,8 +98,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
   const [notice, setNotice] = useState('')
 
   const canSave = useMemo(() => {
-    const descriptionText = extractTextFromHtml(form.effectDescription)
-    return Boolean(String(form.name || '').trim() && descriptionText)
+    return Boolean(String(form.name || '').trim() && hasMeaningfulHtmlContent(form.effectDescription))
   }, [form.effectDescription, form.name])
 
   const loadTechniques = async () => {
@@ -135,26 +143,34 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     setNotice('')
 
     try {
-      const rows = await listOwnCompetitiveTechniques(session.userId)
+      if (!techniqueId) {
+        throw new Error('Load a technique with Edit before exporting JSON.')
+      }
+
+      const item = {
+        name: form.name || '',
+        topic: form.topic || '',
+        subtopic: form.subtopic || '',
+        effectType: form.effectType || '',
+        status: form.status || 'draft',
+        effectDescription: form.effectDescription || '',
+        workedExample: form.workedExample || '',
+      }
+
+      if (!String(item.name || '').trim() || !hasMeaningfulHtmlContent(item.effectDescription)) {
+        throw new Error('The loaded technique is not valid for export yet.')
+      }
+
       downloadJsonFile('inticore-competitive-techniques.json', {
         ...buildTechniquesTemplateJson(),
         generatedAt: new Date().toISOString(),
-        techniques: rows.map((row) => ({
-          name: row.name || '',
-          topic: row.topic || '',
-          subtopic: row.subtopic || '',
-          effectType: row.effect_type || '',
-          status: row.status || 'draft',
-          effectDescription: row.effect_description || '',
-          workedExample: row.worked_example || '',
-        })),
+        techniques: [item],
       })
-      setNotice('Techniques exported to JSON.')
+      setNotice('Technique exported to JSON.')
     } catch (err) {
       setError(err?.message || 'Could not export techniques JSON.')
     }
   }
-
   const downloadTechniquesTemplate = () => {
     downloadJsonFile('inticore-techniques-format.json', buildTechniquesTemplateJson())
     setNotice('Inticore-compatible technique JSON format downloaded.')
@@ -171,38 +187,89 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
 
     try {
       const json = await parseJsonFile(file)
-      const records = Array.isArray(json?.techniques) ? json.techniques : []
-      if (!records.length) throw new Error('No techniques found in JSON file.')
+      const importedRecords = Array.isArray(json?.techniques) ? json.techniques : []
+      if (!importedRecords.length) throw new Error('No techniques found in JSON file.')
 
       const allowedStatuses = role === 'teacher' ? STATUS_OPTIONS : STUDENT_STATUS_OPTIONS
-      let importedCount = 0
+      const existingRows = await listOwnCompetitiveTechniques(session.userId)
+      const existingByKey = new Map()
+      existingRows.forEach((row) => {
+        const key = buildTechniqueImportKey(row)
+        if (key && !existingByKey.has(key)) existingByKey.set(key, row)
+      })
 
-      for (const item of records) {
+      const fileSeen = new Set()
+      let createdCount = 0
+      let updatedCount = 0
+      let skippedCount = 0
+
+      for (const item of importedRecords) {
+        const importedStatus = toAllowedStatus(item?.status, allowedStatuses, 'proposed')
         const payload = {
           created_by: session.userId,
-          status: toAllowedStatus(item?.status, allowedStatuses, 'proposed'),
+          status: importedStatus,
           name: String(item?.name || '').trim(),
           topic: toNullableText(item?.topic),
           subtopic: toNullableText(item?.subtopic),
           effect_type: toNullableText(item?.effectType),
           effect_description: normalizeCompetitiveRichField(item?.effectDescription),
           worked_example: normalizeCompetitiveRichField(item?.workedExample) || null,
-          reviewed_by: null,
-          approved_at: null,
+          reviewed_by: role === 'teacher' && (importedStatus === 'approved' || importedStatus === 'rejected') ? session.userId : null,
+          approved_at: role === 'teacher' && importedStatus === 'approved' ? new Date().toISOString() : null,
         }
 
-        if (!payload.name) continue
-        if (!extractTextFromHtml(payload.effect_description)) continue
+        const importKey = buildTechniqueImportKey(item)
+        if (!payload.name || !hasMeaningfulHtmlContent(payload.effect_description) || !importKey) {
+          skippedCount += 1
+          continue
+        }
 
-        await createCompetitiveTechnique(payload)
-        importedCount += 1
+        if (fileSeen.has(importKey)) {
+          skippedCount += 1
+          continue
+        }
+        fileSeen.add(importKey)
+
+        const existing = existingByKey.get(importKey)
+        if (existing) {
+          const row = await updateOwnCompetitiveTechnique(existing.id, session.userId, payload)
+          existingByKey.set(importKey, row)
+          updatedCount += 1
+        } else {
+          const row = await createCompetitiveTechnique(payload)
+          existingByKey.set(importKey, row)
+          createdCount += 1
+        }
       }
 
-      if (!importedCount) throw new Error('No valid technique entries found to import.')
+      if (!createdCount && !updatedCount) throw new Error('No valid technique entries found to import.')
       await loadTechniques()
-      setNotice('Imported ' + importedCount + ' techniques from JSON.')
+      setNotice(`Technique import complete. Created: ${createdCount}, updated: ${updatedCount}, skipped: ${skippedCount}.`)
     } catch (err) {
       setError(err?.message || 'Could not import techniques JSON.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deleteTechnique = async (row) => {
+    if (!row?.id) return
+    if (!window.confirm(`Delete technique "${row.name || 'Untitled technique'}"?`)) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await deleteOwnCompetitiveTechnique(row.id, session.userId)
+      if (techniqueId === row.id) {
+        setTechniqueId(null)
+        setForm(EMPTY_FORM)
+      }
+      await loadTechniques()
+      setNotice('Technique deleted successfully.')
+    } catch (err) {
+      setError(err?.message || 'Could not delete technique.')
     } finally {
       setSaving(false)
     }
@@ -220,7 +287,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
         throw new Error('Technique name is required.')
       }
 
-      if (!extractTextFromHtml(payload.effect_description)) {
+      if (!hasMeaningfulHtmlContent(payload.effect_description)) {
         throw new Error('Effect description is required.')
       }
 
@@ -293,9 +360,14 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
                   <div className="saved-item-name">{item.name || 'Untitled technique'}</div>
                   <div className="saved-item-date">{formatDate(item.updated_at)}</div>
                   <div className="saved-item-tags">Status: {item.status}</div>
-                  <button type="button" className="btn" onClick={() => loadIntoForm(item)}>
-                    Edit
-                  </button>
+                  <div className="saved-item-actions">
+                    <button type="button" className="btn" onClick={() => loadIntoForm(item)}>
+                      Edit
+                    </button>
+                    <button type="button" className="btn danger" onClick={() => deleteTechnique(item)} disabled={saving}>
+                      Delete
+                    </button>
+                  </div>
                 </div>
               ))}
           </div>
@@ -369,5 +441,4 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     </div>
   )
 }
-
 

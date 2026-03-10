@@ -20,6 +20,7 @@ import CompetitiveConstructsCollection from './CompetitiveConstructsCollection'
 import CompetitiveConstructReviewPanel from './CompetitiveConstructReviewPanel'
 import CompetitiveTrainingMode from './CompetitiveTrainingMode'
 import MultiplayerLobby from './MultiplayerLobby'
+import MultiplayerMatch from './MultiplayerMatch'
 import { COMPETITIVE_SECTIONS, CompetitiveModeShell, CreativeModeShell, MainMenu } from './components/ModeShells'
 
 import 'katex/dist/katex.min.css'
@@ -1305,6 +1306,7 @@ function App() {
   const [bootLoading, setBootLoading] = useState(true)
   const [entryScreen, setEntryScreen] = useState('welcome')
   const [workspaceTarget, setWorkspaceTarget] = useState(null)
+  const [activeMultiplayerMatchId, setActiveMultiplayerMatchId] = useState(null)
   const bootstrapRunIdRef = useRef(0)
 
   const setSessionFromUser = (user, profileInput) => {
@@ -1512,6 +1514,18 @@ function App() {
       <MultiplayerLobby
         session={session}
         onBackToMenu={() => setWorkspaceTarget(null)}
+        onOpenMatch={(matchId) => { setActiveMultiplayerMatchId(matchId); setWorkspaceTarget('multiplayer-match') }}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'multiplayer-match') {
+    return (
+      <MultiplayerMatch
+        session={session}
+        matchId={activeMultiplayerMatchId}
+        onBackToLobby={() => setWorkspaceTarget('multiplayer')}
         onLogout={handleLogout}
       />
     )
@@ -1717,6 +1731,7 @@ function App() {
 }
 
 export default App
+
 
 
 

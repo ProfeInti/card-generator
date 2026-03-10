@@ -50,12 +50,12 @@ const SECTION_BY_ID = COMPETITIVE_SECTIONS.reduce((acc, item) => {
 
 const COMPETITIVE_GROUPS = [
   {
-    title: 'Techniques',
-    entries: ['competitive-techniques', 'competitive-techniques-collection'],
-  },
-  {
     title: 'Exercises',
     entries: ['competitive-exercises', 'competitive-exercises-collection'],
+  },
+  {
+    title: 'Techniques',
+    entries: ['competitive-techniques', 'competitive-techniques-collection'],
   },
   {
     title: 'Constructs',

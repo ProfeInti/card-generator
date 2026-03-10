@@ -142,6 +142,7 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
                 <div className="saved-item-name">{item.title || 'Untitled construct'}</div>
                 <div className="saved-item-date">Updated: {formatDate(item.updated_at)}</div>
                 <div className="saved-item-tags">Creator: {creatorLabel(item.created_by)}</div>
+                <div className="saved-item-tags">ATK / ARM: {item.attack ?? 0} / {item.armor ?? 0}</div>
                 <button type="button" className="btn" onClick={() => setSelectedId(item.id)}>
                   Open
                 </button>
@@ -165,6 +166,9 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
                 <div className="saved-title">Metadata</div>
                 <div className="saved-empty">Title: {detail.construct.title || 'N/A'}</div>
                 <div className="saved-empty">Description: {detail.construct.description || 'N/A'}</div>
+                <div className="saved-empty">Attack: {detail.construct.attack ?? 0}</div>
+                <div className="saved-empty">Armor: {detail.construct.armor ?? 0}</div>
+                <div className="saved-empty">Effects: {detail.construct.effects || 'N/A'}</div>
               </div>
 
               <div className="collection-toolbar" style={{ marginTop: 12 }}>
@@ -232,4 +236,3 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
     </div>
   )
 }
-

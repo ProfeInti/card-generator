@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   createMultiplayerRoom,
   joinMultiplayerRoom,
+  leaveAllMultiplayerRooms,
   leaveMultiplayerRoom,
   listMatchesByRoomIds,
   listRoomPlayersByRoomIds,
   listVisibleMultiplayerRooms,
+  setMultiplayerRoomReady,
   startMatchForRoom,
 } from './data/multiplayerLobbyRepo'
 import { listProfileUsernamesByIds } from './data/profilesRepo'
@@ -17,7 +19,7 @@ function formatDate(value) {
   return parsed.toLocaleString()
 }
 
-export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
+export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, onLogout }) {
   const [rooms, setRooms] = useState([])
   const [playersByRoomId, setPlayersByRoomId] = useState({})
   const [latestMatchByRoomId, setLatestMatchByRoomId] = useState({})
@@ -76,6 +78,42 @@ export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
     loadLobby()
   }, [session.userId])
 
+  const roomCards = useMemo(() => {
+    return rooms.map((room) => {
+      const players = playersByRoomId[room.id] || []
+      const latestMatch = latestMatchByRoomId[room.id] || null
+      const playerIds = players.map((row) => row.user_id)
+      const isMember = playerIds.includes(session.userId)
+      const currentPlayer = players.find((row) => row.user_id === session.userId) || null
+      const ownerName = usernameById[room.created_by] || room.created_by
+      const playerNames = players.map((row) => usernameById[row.user_id] || row.user_id)
+      const readyCount = players.filter((row) => Boolean(row.is_ready)).length
+      const allPlayersReady = players.length === 2 && readyCount === players.length
+      const matchPlayersLabel = latestMatch
+        ? [latestMatch.player1_id, latestMatch.player2_id]
+          .map((id) => usernameById[id] || id)
+          .join(' vs ')
+        : ''
+
+      return {
+        ...room,
+        players,
+        latestMatch,
+        matchPlayersLabel,
+        playerNames,
+        ownerName,
+        isMember,
+        currentPlayer,
+        playerCount: players.length,
+        readyCount,
+        allPlayersReady,
+        isCurrentPlayerReady: Boolean(currentPlayer?.is_ready),
+        isFull: players.length >= Number(room.max_players || 2),
+        canStartMatch: isMember && room.status === 'open' && allPlayersReady,
+      }
+    })
+  }, [rooms, playersByRoomId, latestMatchByRoomId, usernameById, session.userId])
+
   const createRoom = async () => {
     setSaving(true)
     setError('')
@@ -106,7 +144,7 @@ export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
     setNotice('')
 
     try {
-      await joinMultiplayerRoom(roomId, session.userId)
+      await joinMultiplayerRoom(roomId)
       setNotice('Room joined.')
       await loadLobby()
     } catch (err) {
@@ -132,6 +170,22 @@ export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
     }
   }
 
+  const handleToggleReady = async (roomId, nextReady) => {
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      const result = await setMultiplayerRoomReady(roomId, nextReady)
+      setNotice(result?.message || (nextReady ? 'Player marked as ready.' : 'Player is no longer ready.'))
+      await loadLobby()
+    } catch (err) {
+      setError(err?.message || 'Could not update ready state.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleStartMatch = async (roomId) => {
     setSaving(true)
     setError('')
@@ -149,34 +203,33 @@ export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
     }
   }
 
-  const roomCards = useMemo(() => {
-    return rooms.map((room) => {
-      const players = playersByRoomId[room.id] || []
-      const latestMatch = latestMatchByRoomId[room.id] || null
-      const playerIds = players.map((row) => row.user_id)
-      const isMember = playerIds.includes(session.userId)
-      const ownerName = usernameById[room.created_by] || room.created_by
-      const playerNames = players.map((row) => usernameById[row.user_id] || row.user_id)
-      const matchPlayersLabel = latestMatch
-        ? [latestMatch.player1_id, latestMatch.player2_id]
-          .map((id) => usernameById[id] || id)
-          .join(' vs ')
-        : ''
+  const handleBack = async () => {
+    setSaving(true)
+    setError('')
+    setNotice('')
 
-      return {
-        ...room,
-        players,
-        latestMatch,
-        matchPlayersLabel,
-        playerNames,
-        ownerName,
-        isMember,
-        playerCount: players.length,
-        isFull: players.length >= Number(room.max_players || 2),
-        canStartMatch: isMember && room.status === 'open' && players.length === 2,
-      }
-    })
-  }, [rooms, playersByRoomId, latestMatchByRoomId, usernameById, session.userId])
+    try {
+      await leaveAllMultiplayerRooms()
+      onBackToMenu()
+    } catch (err) {
+      setError(err?.message || 'Could not leave joined rooms before exiting multiplayer.')
+      setSaving(false)
+    }
+  }
+
+  const handleExitSession = async () => {
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await leaveAllMultiplayerRooms()
+      onLogout()
+    } catch (err) {
+      setError(err?.message || 'Could not leave joined rooms before logging out.')
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="page">
@@ -184,10 +237,10 @@ export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
         <h1 className="page-title">Multiplayer Lobby</h1>
         <div className="session-user-row">
           <span className="session-user">User: {session.username} ({session.role})</span>
-          <button type="button" className="btn session-logout" onClick={onBackToMenu}>
+          <button type="button" className="btn session-logout" onClick={handleBack} disabled={saving}>
             Back to Modes
           </button>
-          <button type="button" className="btn session-logout" onClick={onLogout}>
+          <button type="button" className="btn session-logout" onClick={handleExitSession} disabled={saving}>
             Log out
           </button>
         </div>
@@ -197,6 +250,8 @@ export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
         <div className="panel">
           <div className="saved-title">Create Room</div>
           <div className="saved-empty">Phase 2: rooms can now initialize match snapshots from approved constructs.</div>
+          <div className="saved-empty">A player stays in an open room only while remaining inside the multiplayer menu.</div>
+          <div className="saved-empty">A match can start only when both players confirm they are ready.</div>
 
           <label className="field">
             <span>Room Name</span>
@@ -234,6 +289,13 @@ export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
                 <div className="saved-item-tags">Status: {room.status}</div>
                 <div className="saved-item-tags">Players: {room.playerCount} / {room.max_players}</div>
                 <div className="saved-item-tags">Members: {room.playerNames.join(', ') || 'None'}</div>
+                {room.status === 'open' && <div className="saved-item-tags">Ready: {room.readyCount} / 2</div>}
+
+                {room.players.length > 0 && room.status === 'open' && (
+                  <div className="saved-item-tags">
+                    Ready players: {room.players.map((player) => `${usernameById[player.user_id] || player.user_id}${player.is_ready ? ' (ready)' : ''}`).join(', ')}
+                  </div>
+                )}
 
                 {room.latestMatch && (
                   <>
@@ -251,6 +313,17 @@ export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
                     </button>
                   )}
 
+                  {room.isMember && room.status === 'open' && (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => handleToggleReady(room.id, !room.isCurrentPlayerReady)}
+                      disabled={saving}
+                    >
+                      {room.isCurrentPlayerReady ? 'Cancel Ready' : 'Ready'}
+                    </button>
+                  )}
+
                   {room.isMember && (
                     <button type="button" className="btn danger" onClick={() => handleLeaveRoom(room.id)} disabled={saving}>
                       Leave Room
@@ -263,9 +336,33 @@ export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
                     </button>
                   )}
 
-                  {!room.isMember && (room.status !== 'open' || room.isFull) && (
+                  {room.latestMatch && (
+                    <button type="button" className="btn" onClick={() => onOpenMatch?.(room.latestMatch.id)} disabled={saving}>
+                      Open Match
+                    </button>
+                  )}
+
+                  {room.isMember && room.status === 'open' && !room.canStartMatch && room.playerCount === 2 && (
                     <button type="button" className="btn" disabled>
-                      Unavailable
+                      Waiting for Both Ready
+                    </button>
+                  )}
+
+                  {!room.isMember && room.status === 'open' && room.isFull && (
+                    <button type="button" className="btn" disabled>
+                      Full
+                    </button>
+                  )}
+
+                  {!room.isMember && room.status === 'in_match' && (
+                    <button type="button" className="btn" disabled>
+                      In Match
+                    </button>
+                  )}
+
+                  {!room.isMember && room.status === 'closed' && (
+                    <button type="button" className="btn" disabled>
+                      Closed
                     </button>
                   )}
                 </div>
@@ -277,3 +374,6 @@ export default function MultiplayerLobby({ session, onBackToMenu, onLogout }) {
     </div>
   )
 }
+
+
+

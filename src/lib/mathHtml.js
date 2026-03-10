@@ -33,6 +33,21 @@ export function extractTextFromHtml(html) {
   return (doc.body.textContent || '').replace(/\s+/g, ' ').trim()
 }
 
+export function hasMeaningfulHtmlContent(html) {
+  const raw = typeof html === 'string' ? html : ''
+  if (!raw.trim()) return false
+
+  if (extractTextFromHtml(raw)) return true
+
+  if (typeof window === 'undefined') {
+    return /<(img|table)\b|data-type="math-inline"/i.test(raw)
+  }
+
+  const parser = new window.DOMParser()
+  const doc = parser.parseFromString(raw, 'text/html')
+  return Boolean(doc.body.querySelector('img, table, [data-type="math-inline"]'))
+}
+
 export function isLikelyHtml(value) {
   if (typeof value !== 'string') return false
   return /<[^>]+>/.test(value)

@@ -3,10 +3,16 @@ import { supabase } from '../lib/supabase'
 const ROOM_SELECT_FIELDS =
   'id, created_by, name, status, is_private, max_players, created_at, updated_at'
 
-const ROOM_PLAYER_SELECT_FIELDS = 'id, room_id, user_id, joined_at'
+const ROOM_PLAYER_SELECT_FIELDS = 'id, room_id, user_id, joined_at, is_ready, ready_at'
 
 const MATCH_SELECT_FIELDS =
   'id, room_id, status, player1_id, player2_id, current_turn_user_id, turn_deadline_at, turn_seconds, winner_user_id, created_at, updated_at'
+
+const MATCH_CONSTRUCT_SELECT_FIELDS =
+  'id, match_id, owner_user_id, source_construct_id, source_exercise_id, title, description, attack, armor, effects, selected_solution_path, stability_total, stability_remaining, slot_index, destroyed_at, created_at'
+
+const MATCH_STEP_SELECT_FIELDS =
+  'id, match_construct_id, step_order, source_step_id, technique_id, progress_state, explanation, solution_path, created_at'
 
 export async function listVisibleMultiplayerRooms() {
   const { data, error } = await supabase
@@ -46,6 +52,55 @@ export async function listMatchesByRoomIds(roomIds) {
   return Array.isArray(data) ? data : []
 }
 
+export async function getMultiplayerMatch(matchId) {
+  const { data, error } = await supabase
+    .from('mp_matches')
+    .select(MATCH_SELECT_FIELDS)
+    .eq('id', matchId)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function getMultiplayerRoom(roomId) {
+  const { data, error } = await supabase
+    .from('mp_rooms')
+    .select(ROOM_SELECT_FIELDS)
+    .eq('id', roomId)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function listMatchConstructs(matchId) {
+  const { data, error } = await supabase
+    .from('mp_match_constructs')
+    .select(MATCH_CONSTRUCT_SELECT_FIELDS)
+    .eq('match_id', matchId)
+    .order('owner_user_id', { ascending: true })
+    .order('slot_index', { ascending: true })
+
+  if (error) throw error
+  return Array.isArray(data) ? data : []
+}
+
+export async function listMatchStepsByConstructIds(matchConstructIds) {
+  const ids = [...new Set((matchConstructIds || []).filter(Boolean))]
+  if (!ids.length) return []
+
+  const { data, error } = await supabase
+    .from('mp_match_steps')
+    .select(MATCH_STEP_SELECT_FIELDS)
+    .in('match_construct_id', ids)
+    .order('match_construct_id', { ascending: true })
+    .order('step_order', { ascending: true })
+
+  if (error) throw error
+  return Array.isArray(data) ? data : []
+}
+
 export async function createMultiplayerRoom(userId, payload) {
   const insertPayload = {
     created_by: userId,
@@ -65,15 +120,14 @@ export async function createMultiplayerRoom(userId, payload) {
   return data
 }
 
-export async function joinMultiplayerRoom(roomId, userId) {
-  const { data, error } = await supabase
-    .from('mp_room_players')
-    .insert({ room_id: roomId, user_id: userId })
-    .select(ROOM_PLAYER_SELECT_FIELDS)
-    .single()
+export async function joinMultiplayerRoom(roomId) {
+  const { data, error } = await supabase.rpc('mp_join_open_room', {
+    p_room_id: roomId,
+  })
 
   if (error) throw error
-  return data
+  const row = Array.isArray(data) ? data[0] : data
+  return row || null
 }
 
 export async function leaveMultiplayerRoom(roomId, userId) {
@@ -87,6 +141,24 @@ export async function leaveMultiplayerRoom(roomId, userId) {
   return true
 }
 
+export async function leaveAllMultiplayerRooms() {
+  const { data, error } = await supabase.rpc('mp_leave_all_rooms')
+
+  if (error) throw error
+  return Number(data || 0)
+}
+
+export async function setMultiplayerRoomReady(roomId, isReady) {
+  const { data, error } = await supabase.rpc('mp_set_room_ready', {
+    p_room_id: roomId,
+    p_is_ready: Boolean(isReady),
+  })
+
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  return row || null
+}
+
 export async function startMatchForRoom(roomId, turnSeconds = 10) {
   const { data, error } = await supabase.rpc('mp_start_match', {
     p_room_id: roomId,
@@ -98,4 +170,10 @@ export async function startMatchForRoom(roomId, turnSeconds = 10) {
   return row || null
 }
 
-export { ROOM_SELECT_FIELDS, ROOM_PLAYER_SELECT_FIELDS, MATCH_SELECT_FIELDS }
+export {
+  ROOM_SELECT_FIELDS,
+  ROOM_PLAYER_SELECT_FIELDS,
+  MATCH_SELECT_FIELDS,
+  MATCH_CONSTRUCT_SELECT_FIELDS,
+  MATCH_STEP_SELECT_FIELDS,
+}

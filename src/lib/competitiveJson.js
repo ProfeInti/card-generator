@@ -70,7 +70,7 @@ export function buildExercisesTemplateJson() {
     format: INTICORE_FORMAT,
     entity: 'competitive_exercises',
     version: 1,
-    notes: 'Fields with equations accept HTML from editor or plain text with inline latex between $...$.',
+    notes: 'sourceAuthor, topic, exerciseNumber and pageNumber are required. sourceTitle is optional and stores the original book or source title. The app regenerates the exercise name automatically from author + topic + exercise number + page.',
     exercises: [
       {
         sourceTitle: 'Algebra Workbook',
