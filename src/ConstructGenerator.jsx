@@ -27,6 +27,7 @@ const EMPTY_FORM = {
   description: '',
   attack: '0',
   armor: '0',
+  ingenuityCost: '0',
   effects: '',
 }
 
@@ -243,6 +244,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
         description: String(row.description || ''),
         attack: String(row.attack ?? 0),
         armor: String(row.armor ?? 0),
+        ingenuityCost: String(row.ingenuity_cost ?? 0),
         effects: String(row.effects || ''),
       })
 
@@ -372,10 +374,14 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
 
   const canSave = useMemo(() => {
     if (!form.exerciseId || !String(form.title || '').trim()) return false
-    if (toNonNegativeInt(form.attack) === null || toNonNegativeInt(form.armor) === null) return false
+    if (
+      toNonNegativeInt(form.attack) === null ||
+      toNonNegativeInt(form.armor) === null ||
+      toNonNegativeInt(form.ingenuityCost) === null
+    ) return false
     if (!steps.length) return false
     return steps.every((step) => step.techniqueId && String(step.progressState || '').trim())
-  }, [form.exerciseId, form.title, form.attack, form.armor, steps])
+  }, [form.exerciseId, form.title, form.attack, form.armor, form.ingenuityCost, steps])
 
   const saveConstruct = async () => {
     setSaving(true)
@@ -387,6 +393,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
       if (!String(form.title || '').trim()) throw new Error('Construct title is required.')
       if (toNonNegativeInt(form.attack) === null) throw new Error('Attack must be a non-negative integer.')
       if (toNonNegativeInt(form.armor) === null) throw new Error('Armor must be a non-negative integer.')
+      if (toNonNegativeInt(form.ingenuityCost) === null) throw new Error('Ingenuity Cost must be a non-negative integer.')
       if (!steps.length) throw new Error('At least one step is required.')
 
       const nextStatus = allowedStatuses.includes(form.status) ? form.status : 'draft'
@@ -397,6 +404,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
         description: String(form.description || '').trim() || null,
         attack: toNonNegativeInt(form.attack, 0),
         armor: toNonNegativeInt(form.armor, 0),
+        ingenuity_cost: toNonNegativeInt(form.ingenuityCost, 0),
         effects: String(form.effects || '').trim() || null,
         status: nextStatus,
         reviewed_by: role === 'teacher' && (nextStatus === 'approved' || nextStatus === 'rejected') ? session.userId : null,
@@ -515,6 +523,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                 <div className="saved-item-date">Updated: {formatDate(item.updated_at)}</div>
                 <div className="saved-item-tags">Status: {item.status}</div>
                 <div className="saved-item-tags">ATK / ARM: {item.attack ?? 0} / {item.armor ?? 0}</div>
+                <div className="saved-item-tags">Ingenuity Cost: {item.ingenuity_cost ?? 0}</div>
                 <div className="saved-item-actions">
                   <button type="button" className="btn" onClick={() => loadConstruct(item)}>
                     Edit
@@ -585,6 +594,10 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
             <label className="field">
               <span>Armor</span>
               <input value={form.armor} onChange={(e) => updateFormField('armor', e.target.value)} placeholder="0" />
+            </label>
+            <label className="field">
+              <span>Ingenuity Cost</span>
+              <input value={form.ingenuityCost} onChange={(e) => updateFormField('ingenuityCost', e.target.value)} placeholder="0" />
             </label>
           </div>
 

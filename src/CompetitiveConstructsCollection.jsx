@@ -227,6 +227,7 @@ export default function CompetitiveConstructsCollection({ session, onBackToCompe
                   <div className="saved-item-date">Updated: {formatDate(item.updated_at)}</div>
                   <div className="saved-item-tags">Status: {item.status}</div>
                   <div className="saved-item-tags">ATK / ARM: {item.attack ?? 0} / {item.armor ?? 0}</div>
+                  <div className="saved-item-tags">Ingenuity Cost: {item.ingenuity_cost ?? 0}</div>
                   <div className="saved-item-tags">Exercise: {exercise?.source_title || 'N/A'}</div>
                   <button type="button" className="btn" onClick={() => setSelectedId(item.id)}>
                     View
@@ -256,6 +257,7 @@ export default function CompetitiveConstructsCollection({ session, onBackToCompe
                 <div className="saved-empty">Description: {detail.construct.description || 'N/A'}</div>
                 <div className="saved-empty">Attack: {detail.construct.attack ?? 0}</div>
                 <div className="saved-empty">Armor: {detail.construct.armor ?? 0}</div>
+                <div className="saved-empty">Ingenuity Cost: {detail.construct.ingenuity_cost ?? 0}</div>
                 <div className="saved-empty">Effects: {detail.construct.effects || 'N/A'}</div>
               </div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   createMultiplayerRoom,
+  deleteMultiplayerRoom,
   joinMultiplayerRoom,
   leaveAllMultiplayerRooms,
   leaveMultiplayerRoom,
@@ -192,12 +193,28 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, o
     setNotice('')
 
     try {
-      const result = await startMatchForRoom(roomId, 10)
+      const result = await startMatchForRoom(roomId, 75)
       if (!result?.match_id) throw new Error(result?.message || 'Could not start match.')
       setNotice(`Match created: ${result.match_id}`)
       await loadLobby()
     } catch (err) {
       setError(err?.message || 'Could not start match.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeleteRoom = async (roomId) => {
+    setSaving(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await deleteMultiplayerRoom(roomId, session.userId)
+      setNotice('Room deleted successfully.')
+      await loadLobby()
+    } catch (err) {
+      setError(err?.message || 'Could not delete room.')
     } finally {
       setSaving(false)
     }
@@ -333,6 +350,12 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, o
                   {room.canStartMatch && (
                     <button type="button" className="btn" onClick={() => handleStartMatch(room.id)} disabled={saving}>
                       Start Match
+                    </button>
+                  )}
+
+                  {room.created_by === session.userId && (
+                    <button type="button" className="btn danger" onClick={() => handleDeleteRoom(room.id)} disabled={saving}>
+                      Delete Room
                     </button>
                   )}
 

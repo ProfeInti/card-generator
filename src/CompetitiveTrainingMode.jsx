@@ -368,6 +368,7 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
                   <div className="saved-item-date">Updated: {formatDate(item.updated_at)}</div>
                   <div className="saved-item-tags">Exercise: {exercise?.source_title || 'N/A'}</div>
                   <div className="saved-item-tags">Topic: {exercise?.topic || 'N/A'} / {exercise?.subtopic || 'N/A'}</div>
+                  <div className="saved-item-tags">Ingenuity Cost: {item.ingenuity_cost ?? 0}</div>
                   <button
                     type="button"
                     className="btn"
@@ -394,6 +395,7 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
                 <div className="saved-item-tags">
                   {selectedExercise?.source_title || 'N/A'} | {selectedExercise?.topic || 'N/A'} / {selectedExercise?.subtopic || 'N/A'}
                 </div>
+                <div className="saved-item-tags">Ingenuity Cost: {detail.construct.ingenuity_cost ?? 0}</div>
                 <div className="saved-item-tags">
                   Source location: {selectedExercise?.source_location || 'N/A'} | Page: {selectedExercise?.page_number || 'N/A'} | Exercise: {selectedExercise?.exercise_number || 'N/A'}
                 </div>
