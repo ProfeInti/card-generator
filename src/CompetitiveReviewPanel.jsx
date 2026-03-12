@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   listProposedCompetitiveExercises,
   reviewProposedCompetitiveExercise,
@@ -34,7 +34,7 @@ export default function CompetitiveReviewPanel({ session, onBackToCompetitive, o
 
   const creatorLabel = (id) => creatorNamesById[id] || id || 'Unknown'
 
-  const loadProposals = async () => {
+  const loadProposals = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -60,11 +60,11 @@ export default function CompetitiveReviewPanel({ session, onBackToCompetitive, o
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedId])
 
   useEffect(() => {
     loadProposals()
-  }, [session.userId])
+  }, [loadProposals])
 
   const reviewExercise = async (decision) => {
     if (!selected) return
@@ -185,4 +185,6 @@ export default function CompetitiveReviewPanel({ session, onBackToCompetitive, o
     </div>
   )
 }
+
+
 

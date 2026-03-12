@@ -1,16 +1,33 @@
-# React + Vite
+﻿# Card Generator
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicacion React + Vite con autenticacion y persistencia en Supabase. El proyecto hoy funciona principalmente desde `src/` y las migraciones de `supabase/`.
 
-Currently, two official plugins are available:
+## Flujo activo
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Frontend: `src/`
+- Auth y datos: Supabase
+- Migraciones: `supabase/migrations/`
 
-## React Compiler
+## Configuracion
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Define estas variables en tu entorno Vite:
 
-## Expanding the ESLint configuration
+```env
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Puedes partir de [`.env.example`](/C:/Users/Kory/generador-cartas/card-generator/.env.example).
+
+## Estado del backend local
+
+La carpeta `server/` es legado y no forma parte del flujo principal actual. Se conserva solo como referencia historica mientras saneamos el proyecto. Sus archivos SQLite locales no deben versionarse.
+
+## Scripts
+
+```bash
+npm run dev
+npm run lint
+npm run build
+npm run preview
+```

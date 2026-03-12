@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   approveConstruct,
   getConstructDetail,
@@ -31,7 +31,7 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
   const stepRows = useMemo(() => (Array.isArray(detail?.steps) ? detail.steps : []), [detail?.steps])
   const creatorLabel = (id) => creatorNamesById[id] || id || 'Unknown'
 
-  const loadProposals = async () => {
+  const loadProposals = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -58,9 +58,9 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedId])
 
-  const loadDetail = async (constructId) => {
+  const loadDetail = useCallback(async (constructId) => {
     if (!constructId) {
       setDetail(null)
       return
@@ -77,15 +77,15 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
     } finally {
       setDetailLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     loadProposals()
-  }, [session.userId])
+  }, [loadProposals])
 
   useEffect(() => {
     loadDetail(selectedId)
-  }, [selectedId])
+  }, [loadDetail, selectedId])
 
   const reviewConstruct = async (decision) => {
     if (!selectedId) return
@@ -236,3 +236,5 @@ export default function CompetitiveConstructReviewPanel({ session, onBackToCompe
     </div>
   )
 }
+
+

@@ -1,5 +1,5 @@
 import { NodeViewWrapper } from '@tiptap/react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 
@@ -74,7 +74,8 @@ export default function MathInlineView({ node, updateAttributes }) {
   const mfRef = useRef(null)
 
   useEffect(() => {
-    if (!open || !mfHostRef.current) return
+    const hostEl = mfHostRef.current
+    if (!open || !hostEl) return
 
     const mf = new MathfieldElement()
     mfRef.current = mf
@@ -84,15 +85,15 @@ export default function MathInlineView({ node, updateAttributes }) {
 
     mf.style.width = '100%'
     mf.style.fontSize = '22px'
-    mf.value = latestLatexRef.current || latex
-    draftLatexRef.current = readLatexSafely(mf, latestLatexRef.current || latex)
+    mf.value = latestLatexRef.current || ''
+    draftLatexRef.current = readLatexSafely(mf, latestLatexRef.current || '')
 
     const onInput = () => {
       draftLatexRef.current = readLatexSafely(mf, draftLatexRef.current)
     }
 
     mf.addEventListener('input', onInput)
-    mfHostRef.current.appendChild(mf)
+    hostEl.appendChild(mf)
 
     setTimeout(() => {
       try {
@@ -111,13 +112,28 @@ export default function MathInlineView({ node, updateAttributes }) {
         // noop
       }
       try {
-        mfHostRef.current?.removeChild(mf)
+        hostEl.removeChild(mf)
       } catch {
         // noop
       }
       mfRef.current = null
     }
   }, [open])
+
+  const closeModal = useCallback((save) => {
+    const mf = mfRef.current
+
+    if (save) {
+      const fallback = draftLatexRef.current || latestLatexRef.current || latex
+      pendingSaveRef.current = readLatexSafely(mf, fallback) || fallback
+    }
+
+    try {
+      hideVirtualKeyboardSafely(mf)
+    } finally {
+      setOpen(false)
+    }
+  }, [latex])
 
   useEffect(() => {
     if (!open) return
@@ -131,7 +147,7 @@ export default function MathInlineView({ node, updateAttributes }) {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open])
+  }, [open, closeModal])
 
   useEffect(() => {
     if (open || pendingSaveRef.current === null) return
@@ -147,21 +163,6 @@ export default function MathInlineView({ node, updateAttributes }) {
       }
     })
   }, [open, updateAttributes, latex])
-
-  const closeModal = (save) => {
-    const mf = mfRef.current
-
-    if (save) {
-      const fallback = draftLatexRef.current || latestLatexRef.current || latex
-      pendingSaveRef.current = readLatexSafely(mf, fallback) || fallback
-    }
-
-    try {
-      hideVirtualKeyboardSafely(mf)
-    } finally {
-      setOpen(false)
-    }
-  }
 
   return (
     <>
@@ -279,4 +280,5 @@ export default function MathInlineView({ node, updateAttributes }) {
     </>
   )
 }
+
 

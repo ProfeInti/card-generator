@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   getConstructDetail,
   listApprovedConstructs,
@@ -36,7 +36,7 @@ export default function CompetitiveConstructsCollection({ session, onBackToCompe
 
   const list = sourceMode === 'approved' ? approvedConstructs : ownConstructs
 
-  const loadCollection = async () => {
+  const loadCollection = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -71,7 +71,7 @@ export default function CompetitiveConstructsCollection({ session, onBackToCompe
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedId, session.userId])
 
   const loadDetail = async (constructId) => {
     if (!constructId) {
@@ -94,7 +94,7 @@ export default function CompetitiveConstructsCollection({ session, onBackToCompe
 
   useEffect(() => {
     loadCollection()
-  }, [session.userId])
+  }, [loadCollection])
 
   useEffect(() => {
     loadDetail(selectedId)
@@ -304,3 +304,5 @@ export default function CompetitiveConstructsCollection({ session, onBackToCompe
     </div>
   )
 }
+
+

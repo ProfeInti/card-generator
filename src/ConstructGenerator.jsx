@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import DescriptionEditor from './DescriptionEditor'
 import { listApprovedCompetitiveExercises } from './data/competitiveExercisesRepo'
 import { listApprovedCompetitiveTechniques } from './data/competitiveTechniquesRepo'
@@ -159,7 +159,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     [steps, activePath]
   )
 
-  const loadDependencies = async () => {
+  const loadDependencies = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -178,11 +178,11 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     } finally {
       setLoading(false)
     }
-  }
+  }, [session.userId])
 
   useEffect(() => {
     loadDependencies()
-  }, [session.userId, role])
+  }, [loadDependencies])
 
   useEffect(() => {
     if (!pathOptions.includes(activePath)) {
@@ -722,6 +722,8 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     </div>
   )
 }
+
+
 
 
 

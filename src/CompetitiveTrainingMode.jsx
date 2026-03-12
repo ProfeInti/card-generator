@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   getApprovedConstructDetailForTraining,
   listApprovedConstructs,
@@ -193,7 +193,7 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
     [currentProgressState]
   )
 
-  const resetTrainingState = () => {
+  const resetTrainingState = useCallback(() => {
     setCurrentStepIndex(0)
     setSelectedTechniqueId('')
     setCompleted(false)
@@ -201,9 +201,9 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
     setTopicFilter('')
     setSubtopicFilter('')
     setEffectTypeFilter('')
-  }
+  }, [])
 
-  const loadBaseData = async () => {
+  const loadBaseData = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -232,9 +232,9 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedConstructId, session.userId])
 
-  const startTraining = async (constructId) => {
+  const startTraining = useCallback(async (constructId) => {
     if (!constructId) return
 
     setDetailLoading(true)
@@ -266,11 +266,11 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
     } finally {
       setDetailLoading(false)
     }
-  }
+  }, [resetTrainingState])
 
   useEffect(() => {
     loadBaseData()
-  }, [session.userId])
+  }, [loadBaseData])
 
   useEffect(() => {
     if (!selectedConstructId) {
@@ -279,7 +279,7 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
     }
 
     startTraining(selectedConstructId)
-  }, [selectedConstructId])
+  }, [selectedConstructId, startTraining])
 
   useEffect(() => {
     if (!pathOptions.includes(selectedPath)) {
@@ -298,7 +298,7 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
     } else {
       setFeedback({ type: 'info', message: 'Select the next technique card to continue.' })
     }
-  }, [selectedPath])
+  }, [detail?.exercise, detail?.exercise?.statement, resetTrainingState, selectedPath, steps.length])
 
   const handleTechniquePick = (techniqueId) => {
     if (!currentStep || completed) return

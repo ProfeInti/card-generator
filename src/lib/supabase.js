@@ -1,7 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
+﻿import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || ''
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+const supabaseUrl = String(import.meta.env.VITE_SUPABASE_URL || '').trim()
+const supabaseAnonKey = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
 
 console.log('[supabase] env check:', {
   hasUrl: Boolean(supabaseUrl),
@@ -10,10 +10,9 @@ console.log('[supabase] env check:', {
 })
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Missing Supabase environment variables. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.')
+  throw new Error(
+    'Missing Supabase environment variables. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your Vite environment.'
+  )
 }
 
-export const supabase = createClient(
-  supabaseUrl || 'https://invalid.supabase.local',
-  supabaseAnonKey || 'invalid-anon-key'
-)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listVisibleCompetitiveTechniques } from './data/competitiveTechniquesRepo'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
@@ -36,7 +36,7 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
     [selected?.worked_example]
   )
 
-  const loadItems = async () => {
+  const loadItems = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -56,11 +56,11 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedId, session.userId])
 
   useEffect(() => {
     loadItems()
-  }, [session.userId])
+  }, [loadItems])
 
   const topics = useMemo(
     () => [...new Set(items.map((row) => String(row.topic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
@@ -218,3 +218,5 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
     </div>
   )
 }
+
+

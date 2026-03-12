@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DescriptionEditor from './DescriptionEditor'
 import {
   createCompetitiveTechnique,
@@ -101,7 +101,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     return Boolean(String(form.name || '').trim() && hasMeaningfulHtmlContent(form.effectDescription))
   }, [form.effectDescription, form.name])
 
-  const loadTechniques = async () => {
+  const loadTechniques = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -113,11 +113,11 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     } finally {
       setLoading(false)
     }
-  }
+  }, [session.userId])
 
   useEffect(() => {
     loadTechniques()
-  }, [session.userId, role])
+  }, [loadTechniques])
 
   const startNewDraft = () => {
     setTechniqueId(null)
@@ -441,4 +441,6 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     </div>
   )
 }
+
+
 

@@ -1,4 +1,4 @@
-# Logs
+﻿# Logs
 logs
 *.log
 npm-debug.log*
@@ -11,6 +11,11 @@ node_modules
 dist
 dist-ssr
 *.local
+
+# Local databases and runtime artifacts
+server/*.db
+server/*.db-shm
+server/*.db-wal
 
 # Editor directories and files
 .vscode/*

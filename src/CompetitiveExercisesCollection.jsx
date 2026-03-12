@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listVisibleCompetitiveExercises } from './data/competitiveExercisesRepo'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
@@ -35,7 +35,7 @@ export default function CompetitiveExercisesCollection({ session, onBackToCompet
     [selected?.final_answer]
   )
 
-  const loadItems = async () => {
+  const loadItems = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -55,11 +55,11 @@ export default function CompetitiveExercisesCollection({ session, onBackToCompet
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedId, session.userId])
 
   useEffect(() => {
     loadItems()
-  }, [session.userId])
+  }, [loadItems])
 
   const topics = useMemo(
     () => [...new Set(items.map((row) => String(row.topic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
@@ -221,4 +221,6 @@ export default function CompetitiveExercisesCollection({ session, onBackToCompet
     </div>
   )
 }
+
+
 

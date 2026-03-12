@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DescriptionEditor from './DescriptionEditor'
 import {
   createCompetitiveExercise,
@@ -143,16 +143,13 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
   const importFileRef = useRef(null)
   const [notice, setNotice] = useState('')
 
-  const generatedTitle = useMemo(
-    () => buildExerciseTitle(form),
-    [form.sourceAuthor, form.topic, form.exerciseNumber, form.pageNumber]
-  )
+  const generatedTitle = useMemo(() => buildExerciseTitle(form), [form])
 
   const canSave = useMemo(() => {
     return Boolean(hasRequiredExerciseIdentity(form) && hasMeaningfulHtmlContent(form.statement))
-  }, [form.sourceAuthor, form.topic, form.exerciseNumber, form.pageNumber, form.statement])
+  }, [form])
 
-  const loadExercises = async () => {
+  const loadExercises = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -164,11 +161,11 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
     } finally {
       setLoading(false)
     }
-  }
+  }, [session.userId])
 
   useEffect(() => {
     loadExercises()
-  }, [session.userId, role])
+  }, [loadExercises])
 
   const startNewDraft = () => {
     setExerciseId(null)
@@ -553,6 +550,8 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
     </div>
   )
 }
+
+
 
 
 

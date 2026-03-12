@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   getMultiplayerMatch,
   getMultiplayerRoom,
@@ -49,7 +49,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
   const [notice, setNotice] = useState('')
   const [countdownLabel, setCountdownLabel] = useState('')
 
-  const loadMatch = async () => {
+  const loadMatch = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -86,11 +86,11 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
     } finally {
       setLoading(false)
     }
-  }
+  }, [matchId])
 
   useEffect(() => {
     loadMatch()
-  }, [matchId])
+  }, [loadMatch])
 
   useEffect(() => {
     setCountdownLabel(formatCountdown(match?.turn_deadline_at))
@@ -202,5 +202,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
     </div>
   )
 }
+
+
 
 
