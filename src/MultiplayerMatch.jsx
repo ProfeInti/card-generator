@@ -155,6 +155,7 @@ function PlayerHeader({ label, username, isCurrentTurn, playerState, constructCo
         <div className="mp-player-chip">{isCurrentTurn ? 'Current turn' : 'Waiting'}</div>
         <div className="mp-player-chip">Life: {playerState?.life_total ?? 30}</div>
         <div className="mp-player-chip">Ingenuity: {playerState?.ingenuity_current ?? 0} / {playerState?.ingenuity_max ?? 0}</div>
+        <div className="mp-player-chip">Fatigue: {playerState?.fatigue_count ?? 0}</div>
         <div className="mp-player-chip">Constructs: {constructCount}</div>
       </div>
     </div>
@@ -630,6 +631,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
   const enemyBoard = useMemo(() => buildBoardSlots(enemyBoardCards, constructsById), [enemyBoardCards, constructsById])
   const openOwnSlots = useMemo(() => getOpenSlotsFromBoardCards(ownBoardCards), [ownBoardCards])
   const isOwnTurn = match?.current_turn_user_id === ownPlayerId
+  const isMatchActive = match?.status === 'active'
   const currentTurnKey = `${match?.id || 'no-match'}:${match?.turn_number || 0}:${match?.current_turn_user_id || 'no-player'}:${match?.turn_deadline_at || 'no-deadline'}`
   const selectedAttacker = selectedAttackerId ? constructsById[selectedAttackerId] || null : null
   const activeDeconstructionTarget = activeDeconstructionTargetId ? constructsById[activeDeconstructionTargetId] || null : null
@@ -637,6 +639,19 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
     () => (activeDeconstructionTargetId ? [...(stepsByConstructId[activeDeconstructionTargetId] || [])].sort((a, b) => Number(a.step_order) - Number(b.step_order)) : []),
     [activeDeconstructionTargetId, stepsByConstructId]
   )
+  const winnerName = useMemo(() => {
+    if (!match?.winner_user_id) return ''
+    if (match.winner_user_id === ownPlayerId) return session.username
+    return usernameById[match.winner_user_id] || match.winner_user_id
+  }, [match?.winner_user_id, ownPlayerId, session.username, usernameById])
+  const ownPlayerState = playerStateByUserId[ownPlayerId] || null
+  const enemyPlayerState = playerStateByUserId[enemyPlayerId] || null
+  const resultSummary = useMemo(() => {
+    if (!match || match.status !== 'finished') return ''
+    if (match.winner_user_id === ownPlayerId) return 'Victory'
+    if (match.winner_user_id) return 'Defeat'
+    return 'Match Finished'
+  }, [match, ownPlayerId])
 
   useEffect(() => {
     if (!selectedAttackerId) return
@@ -909,12 +924,27 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
         </div>
       )}
 
+      {match?.status === 'finished' && (
+        <div className="panel mp-result-panel" style={{ marginBottom: 16 }}>
+          <div className="saved-title">{resultSummary}</div>
+          <div className="saved-empty">Winner: {winnerName || 'Unknown'}</div>
+          <div className="saved-empty">
+            Final life totals: You {ownPlayerState?.life_total ?? 0} | Opponent {enemyPlayerState?.life_total ?? 0}
+          </div>
+          <div className="saved-empty">
+            Fatigue totals: You {ownPlayerState?.fatigue_count ?? 0} | Opponent {enemyPlayerState?.fatigue_count ?? 0}
+          </div>
+          {match?.finished_at && <div className="saved-empty">Finished: {formatDate(match.finished_at)}</div>}
+        </div>
+      )}
+
       <div className="mp-battlefield-shell">
         <aside className="mp-side-column">
           <div className="panel">
             <div className="saved-title">Enemy Zones</div>
-            <SideZone title="Enemy Deck" count={playerStateByUserId[enemyPlayerId]?.cards_in_deck ?? 0} hint="Cards remaining in the enemy deck." />
-            <SideZone title="Enemy Discard" count={playerStateByUserId[enemyPlayerId]?.cards_in_discard ?? 0} hint="Used and destroyed enemy cards." />
+            <SideZone title="Enemy Deck" count={enemyPlayerState?.cards_in_deck ?? 0} hint="Cards remaining in the enemy deck." />
+            <SideZone title="Enemy Discard" count={enemyPlayerState?.cards_in_discard ?? 0} hint="Used and destroyed enemy cards." />
+            <SideZone title="Enemy Fatigue" count={enemyPlayerState?.fatigue_count ?? 0} hint="Damage that increases when the enemy tries to draw from an empty deck." />
           </div>
         </aside>
 
@@ -941,7 +971,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
                           <button
                             type="button"
                             className="btn"
-                            disabled={saving || loading || !isOwnTurn}
+                            disabled={saving || loading || !isOwnTurn || !isMatchActive}
                             onClick={() => handleAttackConstruct(construct.id)}
                           >
                             Attack
@@ -951,7 +981,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
                           <button
                             type="button"
                             className="btn"
-                            disabled={saving || loading}
+                            disabled={saving || loading || !isMatchActive}
                             onClick={() => openDeconstructionModal(construct)}
                           >
                             Deconstruct
@@ -972,19 +1002,22 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
               <div className="mp-match-chip">Status: {match?.status || 'Loading'}</div>
               <div className="mp-match-chip">Turn: {usernameById[match?.current_turn_user_id] || match?.current_turn_user_id || 'N/A'}</div>
               <div className="mp-match-chip">Turn No: {match?.turn_number ?? 1}</div>
-              <div className="mp-match-chip">Countdown: {countdownLabel}</div>
+              <div className="mp-match-chip">Countdown: {isMatchActive ? countdownLabel : 'Match finished'}</div>
               <div className="mp-match-chip">Turn Length: {match?.turn_seconds ?? 75}s</div>
               <div className="mp-match-chip">Players in room: {roomPlayers.length}</div>
+              {match?.winner_user_id && <div className="mp-match-chip">Winner: {winnerName || 'Unknown'}</div>}
             </div>
             <div className="mp-center-note">
-              Break armor first, then deconstruct vulnerable constructs before they recover.
+              {isMatchActive
+                ? 'Break armor first, then deconstruct vulnerable constructs before they recover.'
+                : 'The match is complete. You can review the final battlefield state or return to the lobby.'}
             </div>
             <div className="mp-center-actions">
               <button
                 type="button"
                 className="btn"
                 onClick={handleAttackPlayer}
-                disabled={!selectedAttacker || saving || loading || !isOwnTurn}
+                disabled={!selectedAttacker || saving || loading || !isOwnTurn || !isMatchActive}
               >
                 {selectedAttacker ? `Attack Opponent with ${selectedAttacker.title || 'Construct'}` : 'Select an attacker first'}
               </button>
@@ -998,7 +1031,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
                   Cancel Attack
                 </button>
               )}
-              <button type="button" className="btn" onClick={() => handleEndTurn()} disabled={!isOwnTurn || saving || loading}>
+              <button type="button" className="btn" onClick={() => handleEndTurn()} disabled={!isOwnTurn || saving || loading || !isMatchActive}>
                 {saving && isOwnTurn ? 'Processing...' : 'End Turn'}
               </button>
             </div>
@@ -1026,7 +1059,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
                       <button
                         type="button"
                         className="btn"
-                        disabled={!canConstructAttackThisTurn(construct, match?.turn_number, isOwnTurn) || saving || loading}
+                        disabled={!canConstructAttackThisTurn(construct, match?.turn_number, isOwnTurn) || saving || loading || !isMatchActive}
                         onClick={() => setSelectedAttackerId((current) => (current === construct.id ? null : construct.id))}
                       >
                         {selectedAttackerId === construct.id ? 'Attacker Selected' : 'Select Attacker'}
@@ -1060,6 +1093,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
                     canPlay={
                       !saving &&
                       isOwnTurn &&
+                      isMatchActive &&
                       card.source_type === 'construct' &&
                       openOwnSlots.length > 0 &&
                       (playerStateByUserId[ownPlayerId]?.ingenuity_current ?? 0) >=
@@ -1078,8 +1112,9 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
         <aside className="mp-side-column">
           <div className="panel">
             <div className="saved-title">Your Zones</div>
-            <SideZone title="Your Deck" count={playerStateByUserId[ownPlayerId]?.cards_in_deck ?? 0} hint="Cards remaining in your draw pile." />
-            <SideZone title="Your Discard" count={playerStateByUserId[ownPlayerId]?.cards_in_discard ?? 0} hint="Used and destroyed friendly cards." />
+            <SideZone title="Your Deck" count={ownPlayerState?.cards_in_deck ?? 0} hint="Cards remaining in your draw pile." />
+            <SideZone title="Your Discard" count={ownPlayerState?.cards_in_discard ?? 0} hint="Used and destroyed friendly cards." />
+            <SideZone title="Your Fatigue" count={ownPlayerState?.fatigue_count ?? 0} hint="Damage that increases each time you try to draw from an empty deck." />
           </div>
         </aside>
       </div>

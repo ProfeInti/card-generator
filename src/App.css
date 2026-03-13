@@ -1399,6 +1399,11 @@ math-virtual-keyboard,
   margin-top: 8px;
 }
 
+.mp-result-panel {
+  border-color: #36516b;
+  background: linear-gradient(180deg, rgba(18, 39, 57, 0.92) 0%, rgba(13, 19, 26, 0.96) 100%);
+}
+
 @media (max-width: 1180px) {
   .mp-battlefield-shell {
     grid-template-columns: 1fr;

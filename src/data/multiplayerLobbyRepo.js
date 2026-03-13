@@ -9,7 +9,7 @@ const MATCH_SELECT_FIELDS =
   'id, room_id, status, player1_id, player2_id, current_turn_user_id, turn_deadline_at, turn_seconds, winner_user_id, turn_number, started_at, finished_at, turn_started_at, created_at, updated_at'
 
 const MATCH_PLAYER_SELECT_FIELDS =
-  'id, match_id, user_id, life_total, ingenuity_current, ingenuity_max, cards_in_deck, cards_in_hand, cards_in_discard, created_at, updated_at'
+  'id, match_id, user_id, life_total, ingenuity_current, ingenuity_max, cards_in_deck, cards_in_hand, cards_in_discard, fatigue_count, created_at, updated_at'
 
 const MATCH_CARD_SELECT_FIELDS =
   'id, match_id, owner_user_id, source_type, source_construct_id, source_technique_id, technique_name, technique_topic, technique_subtopic, technique_effect_type, technique_effect_description, technique_worked_example, zone, position_index, linked_match_construct_id, granted_by_opponent, created_at'
