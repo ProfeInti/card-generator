@@ -15,7 +15,7 @@ const MATCH_CARD_SELECT_FIELDS =
   'id, match_id, owner_user_id, source_type, source_construct_id, source_technique_id, technique_name, technique_topic, technique_subtopic, technique_effect_type, technique_effect_description, technique_worked_example, zone, position_index, linked_match_construct_id, granted_by_opponent, created_at'
 
 const MATCH_CONSTRUCT_SELECT_FIELDS =
-  'id, match_id, owner_user_id, source_construct_id, source_exercise_id, title, description, attack, armor, ingenuity_cost, effects, exercise_statement, exercise_final_answer, selected_solution_path, stability_total, stability_remaining, slot_index, state, has_attacked_this_turn, summoned_turn_number, deconstruction_locked_until_turn, destroyed_at, created_at'
+  'id, match_id, owner_user_id, source_construct_id, source_exercise_id, title, description, attack, armor, ingenuity_cost, effects, exercise_statement, exercise_final_answer, selected_solution_path, stability_total, stability_remaining, slot_index, state, has_attacked_this_turn, summoned_turn_number, deconstruction_locked_until_turn, stunned_until_turn, destroyed_at, created_at'
 
 const MATCH_STEP_SELECT_FIELDS =
   'id, match_construct_id, step_order, source_step_id, technique_id, progress_state, explanation, solution_path, created_at'
@@ -235,6 +235,41 @@ export async function playConstructFromHand(matchId, cardId, slotIndex) {
     p_match_id: matchId,
     p_card_id: cardId,
     p_slot_index: slotIndex,
+  })
+
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  return row || null
+}
+
+export async function attackMatchConstruct(matchId, attackerConstructId, targetConstructId) {
+  const { data, error } = await supabase.rpc('mp_attack_construct', {
+    p_match_id: matchId,
+    p_attacker_construct_id: attackerConstructId,
+    p_target_construct_id: targetConstructId,
+  })
+
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  return row || null
+}
+
+export async function attackMatchPlayer(matchId, attackerConstructId) {
+  const { data, error } = await supabase.rpc('mp_attack_player', {
+    p_match_id: matchId,
+    p_attacker_construct_id: attackerConstructId,
+  })
+
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  return row || null
+}
+
+export async function resolveMatchDeconstructionAttempt(matchId, targetConstructId, techniqueIds) {
+  const { data, error } = await supabase.rpc('mp_resolve_deconstruction_attempt', {
+    p_match_id: matchId,
+    p_target_construct_id: targetConstructId,
+    p_technique_ids: Array.isArray(techniqueIds) ? techniqueIds : [],
   })
 
   if (error) throw error

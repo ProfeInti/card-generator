@@ -1322,6 +1322,13 @@ math-virtual-keyboard,
   font-size: 12px;
 }
 
+.mp-slot-combat-stats {
+  color: #f5f1d4;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
 .mp-slot-effects {
   margin-top: auto;
   color: #a7ddca;
@@ -1455,6 +1462,14 @@ math-virtual-keyboard,
   color: #bdbdbd;
   font-size: 12px;
   margin-top: 6px;
+}
+
+.mp-hand-combat-stats {
+  color: #f5f1d4;
+  font-size: 16px;
+  font-weight: 800;
+  margin-top: 6px;
+  letter-spacing: 0.3px;
 }
 
 .mp-hand-card-actions {
