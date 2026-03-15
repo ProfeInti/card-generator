@@ -41,6 +41,17 @@ function topicScore(candidate, correct) {
   return 0
 }
 
+function shuffleArray(items) {
+  const next = [...items]
+
+  for (let index = next.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1))
+    ;[next[index], next[swapIndex]] = [next[swapIndex], next[index]]
+  }
+
+  return next
+}
+
 function buildTechniqueOptions(currentStep, allApprovedTechniques, techniquesById) {
   if (!currentStep?.technique_id) return []
 
@@ -58,7 +69,7 @@ function buildTechniqueOptions(currentStep, allApprovedTechniques, techniquesByI
   const distractors = distractorPool.slice(0, DISTRACTOR_COUNT)
   const options = [correct, ...distractors]
 
-  return options.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+  return shuffleArray(options)
 }
 
 export default function CompetitiveTrainingMode({ session, onBackToCompetitive, onLogout }) {
