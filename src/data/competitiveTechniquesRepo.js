@@ -42,7 +42,23 @@ export async function listApprovedCatalogCompetitiveTechniques() {
 }
 
 export async function listApprovedCompetitiveTechniques(userId) {
-  return listPrivateApprovedCompetitiveTechniques(userId)
+  const items = await listPrivateApprovedCompetitiveTechniques(userId)
+  const usableItems = []
+  const seenLegacyIds = new Set()
+
+  items.forEach((item) => {
+    const legacyId = item.legacy_technique_id
+    if (!legacyId || seenLegacyIds.has(legacyId)) return
+
+    seenLegacyIds.add(legacyId)
+    usableItems.push({
+      ...item,
+      id: legacyId,
+      source_item_id: item.id,
+    })
+  })
+
+  return usableItems
 }
 
 export async function updateOwnCompetitiveTechnique(techniqueId, userId, payload) {
