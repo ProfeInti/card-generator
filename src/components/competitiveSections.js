@@ -15,13 +15,19 @@ export const COMPETITIVE_SECTIONS = [
     id: 'competitive-techniques',
     label: 'Techniques Generator',
     title: 'Techniques Generator',
-    description: 'Create and edit formal techniques to build approved construct sequences later.',
+    description: 'Create and edit formal techniques, including Spanish and French variants, to build approved construct sequences later.',
   },
   {
     id: 'competitive-techniques-collection',
     label: 'Techniques Collection',
     title: 'Techniques Collection',
-    description: 'Browse visible techniques with filters and identify approved items for future constructs.',
+    description: 'Browse and review the techniques that belong to your own workspace.',
+  },
+  {
+    id: 'competitive-techniques-catalog',
+    label: 'Techniques Catalog',
+    title: 'Techniques Catalog',
+    description: 'Browse the global catalog of approved techniques shared across all users.',
   },
   {
     id: 'competitive-construct-generator',

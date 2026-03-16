@@ -8,6 +8,7 @@ const CompetitiveTechniqueEditor = lazy(() => import('./CompetitiveTechniqueEdit
 const CompetitiveTechniqueReviewPanel = lazy(() => import('./CompetitiveTechniqueReviewPanel'))
 const CompetitiveExercisesCollection = lazy(() => import('./CompetitiveExercisesCollection'))
 const CompetitiveTechniquesCollection = lazy(() => import('./CompetitiveTechniquesCollection'))
+const CompetitiveTechniquesCatalog = lazy(() => import('./CompetitiveTechniquesCatalog'))
 const ConstructGenerator = lazy(() => import('./ConstructGenerator'))
 const CompetitiveConstructsCollection = lazy(() => import('./CompetitiveConstructsCollection'))
 const CompetitiveConstructReviewPanel = lazy(() => import('./CompetitiveConstructReviewPanel'))
@@ -145,6 +146,19 @@ export default function AppWorkspaceRouter({
       <CompetitiveTechniquesCollection
         session={session}
         onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onOpenCatalog={() => setWorkspaceTarget('competitive-techniques-catalog')}
+        onOpenEditor={() => setWorkspaceTarget('competitive-techniques')}
+        onLogout={onLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'competitive-techniques-catalog') {
+    return withSuspense(
+      <CompetitiveTechniquesCatalog
+        session={session}
+        onBackToCompetitive={() => setWorkspaceTarget('competitive')}
+        onOpenCollection={() => setWorkspaceTarget('competitive-techniques-collection')}
         onOpenEditor={() => setWorkspaceTarget('competitive-techniques')}
         onLogout={onLogout}
       />

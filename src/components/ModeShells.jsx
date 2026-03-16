@@ -11,7 +11,7 @@ const COMPETITIVE_GROUPS = [
   },
   {
     title: 'Techniques',
-    entries: ['competitive-techniques', 'competitive-techniques-collection'],
+    entries: ['competitive-techniques', 'competitive-techniques-collection', 'competitive-techniques-catalog'],
   },
   {
     title: 'Constructs',

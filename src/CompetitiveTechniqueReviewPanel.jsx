@@ -4,6 +4,7 @@ import {
   reviewProposedCompetitiveTechnique,
 } from './data/competitiveTechniquesRepo'
 import { listProfileUsernamesByIds } from './data/profilesRepo'
+import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 function formatDate(value) {
@@ -21,15 +22,17 @@ export default function CompetitiveTechniqueReviewPanel({ session, onBackToCompe
   const [creatorNamesById, setCreatorNamesById] = useState({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [activeLanguage, setActiveLanguage] = useState('es')
 
   const selected = items.find((row) => row.id === selectedId) || null
+  const selectedTranslation = useMemo(() => getTechniqueTranslation(selected, activeLanguage), [activeLanguage, selected])
   const renderedEffectDescription = useMemo(
-    () => renderMathInHtml(normalizeMathHtmlInput(selected?.effect_description)),
-    [selected?.effect_description]
+    () => renderMathInHtml(normalizeMathHtmlInput(selectedTranslation.effectDescription)),
+    [selectedTranslation.effectDescription]
   )
   const renderedWorkedExample = useMemo(
-    () => renderMathInHtml(normalizeMathHtmlInput(selected?.worked_example)),
-    [selected?.worked_example]
+    () => renderMathInHtml(normalizeMathHtmlInput(selectedTranslation.workedExample)),
+    [selectedTranslation.workedExample]
   )
 
   const creatorLabel = (id) => creatorNamesById[id] || id || 'Unknown'
@@ -75,7 +78,7 @@ export default function CompetitiveTechniqueReviewPanel({ session, onBackToCompe
 
     try {
       await reviewProposedCompetitiveTechnique(selected.id, session.userId, decision)
-      setNotice(decision === 'approve' ? 'Technique approved.' : 'Technique rejected.')
+      setNotice(decision === 'approve' ? 'Technique approved and published to the catalog.' : 'Technique rejected.')
       await loadProposals()
     } catch (err) {
       setError(err?.message || 'Could not apply review decision.')
@@ -132,9 +135,22 @@ export default function CompetitiveTechniqueReviewPanel({ session, onBackToCompe
               <div className="saved-item-date">Updated: {formatDate(selected.updated_at)}</div>
               <div className="saved-item-tags">Creator: {creatorLabel(selected.created_by)}</div>
 
+              <div className="auth-tabs" style={{ marginTop: 12 }}>
+                {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
+                  <button
+                    key={language.id}
+                    type="button"
+                    className={`auth-tab ${activeLanguage === language.id ? 'active' : ''}`}
+                    onClick={() => setActiveLanguage(language.id)}
+                  >
+                    {language.label}
+                  </button>
+                ))}
+              </div>
+
               <div className="collection-toolbar" style={{ marginTop: 12 }}>
                 <div className="saved-title">Technique</div>
-                <div className="saved-empty">{selected.name || 'N/A'}</div>
+                <div className="saved-empty">{selectedTranslation.name || 'N/A'}</div>
                 <div className="saved-empty">Topic: {selected.topic || 'N/A'} / {selected.subtopic || 'N/A'}</div>
                 <div className="saved-empty">Effect type: {selected.effect_type || 'N/A'}</div>
               </div>

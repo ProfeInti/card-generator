@@ -117,10 +117,36 @@ export async function listTechniqueCardDetailsByIds(techniqueIds) {
     .in('id', ids)
 
   if (error) return {}
-  return (Array.isArray(data) ? data : []).reduce((acc, row) => {
+  const byId = (Array.isArray(data) ? data : []).reduce((acc, row) => {
     acc[row.id] = row
     return acc
   }, {})
+
+  const missingIds = ids.filter((id) => !byId[id])
+  if (missingIds.length > 0) {
+    const { data: catalogRows, error: catalogError } = await supabase
+      .from('competitive_technique_catalog')
+      .select('id, legacy_technique_id, name, topic, subtopic, effect_type, effect_description, worked_example, status')
+      .in('legacy_technique_id', missingIds)
+
+    if (!catalogError) {
+      ;(Array.isArray(catalogRows) ? catalogRows : []).forEach((row) => {
+        if (!row.legacy_technique_id) return
+        byId[row.legacy_technique_id] = {
+          id: row.legacy_technique_id,
+          name: row.name,
+          topic: row.topic,
+          subtopic: row.subtopic,
+          effect_type: row.effect_type,
+          effect_description: row.effect_description,
+          worked_example: row.worked_example,
+          status: row.status,
+        }
+      })
+    }
+  }
+
+  return byId
 }
 
 export async function listMatchConstructs(matchId) {

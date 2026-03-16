@@ -50,16 +50,19 @@ export function buildTechniquesTemplateJson() {
     format: INTICORE_FORMAT,
     entity: 'competitive_techniques',
     version: 1,
-    notes: 'Fields with equations accept HTML from editor or plain text with inline latex between $...$.',
+    notes: 'Fields with equations accept HTML from editor or plain text with inline latex between $...$. French translation fields are optional.',
     techniques: [
       {
         name: 'Completing the square',
+        nameFr: 'Completer le carre',
         topic: 'Algebra',
         subtopic: 'Quadratic equations',
         effectType: 'transform',
         status: 'proposed',
         effectDescription: '<p>Rewrite as <span data-type="math-inline" data-latex="(x+a)^2=b"></span>.</p>',
+        effectDescriptionFr: '<p>Reecrire comme <span data-type="math-inline" data-latex="(x+a)^2=b"></span>.</p>',
         workedExample: 'Start with $x^2+6x+5=0$ and complete square.',
+        workedExampleFr: 'Partir de $x^2+6x+5=0$ et completer le carre.',
       },
     ],
   }

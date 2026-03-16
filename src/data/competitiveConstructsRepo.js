@@ -178,6 +178,29 @@ export async function getConstructDetail(constructId) {
       acc[row.id] = row
       return acc
     }, {})
+
+    const missingTechniqueIds = techniqueIds.filter((id) => !techniquesById[id])
+    if (missingTechniqueIds.length > 0) {
+      const { data: catalogTechniques, error: catalogTechniquesError } = await supabase
+        .from('competitive_technique_catalog')
+        .select('id, legacy_technique_id, name, topic, subtopic, effect_type, effect_description, status')
+        .in('legacy_technique_id', missingTechniqueIds)
+
+      if (catalogTechniquesError) throw catalogTechniquesError
+
+      ;(Array.isArray(catalogTechniques) ? catalogTechniques : []).forEach((row) => {
+        if (!row.legacy_technique_id) return
+        techniquesById[row.legacy_technique_id] = {
+          id: row.legacy_technique_id,
+          name: row.name,
+          topic: row.topic,
+          subtopic: row.subtopic,
+          effect_type: row.effect_type,
+          effect_description: row.effect_description,
+          status: row.status,
+        }
+      })
+    }
   }
 
   return {
