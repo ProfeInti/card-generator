@@ -149,6 +149,11 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     [selectedExercise?.statement]
   )
 
+  const renderedSelectedExerciseFinalAnswer = useMemo(
+    () => renderMathInHtml(normalizeMathHtmlInput(selectedExercise?.final_answer || '')),
+    [selectedExercise?.final_answer]
+  )
+
   const pathOptions = useMemo(() => {
     const unique = new Set(steps.map((step) => normalizePathKey(step.solutionPath)).filter(Boolean))
     if (!unique.size) unique.add(DEFAULT_PATH)
@@ -573,6 +578,33 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                   <div className="card-description" dangerouslySetInnerHTML={{ __html: renderedSelectedExerciseStatement }} />
                 </div>
               </label>
+
+              <label className="field" style={{ marginTop: 8 }}>
+                <span>Statement copy helper</span>
+                <DescriptionEditor
+                  value={normalizeMathHtmlInput(selectedExercise.statement || '')}
+                  readOnly
+                  baseFontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}
+                  baseFontSize={18}
+                />
+              </label>
+
+              <label className="field" style={{ marginTop: 8 }}>
+                <span>Selected exercise final answer</span>
+                <div className="rt-editor" style={{ minHeight: 120 }}>
+                  <div className="card-description" dangerouslySetInnerHTML={{ __html: renderedSelectedExerciseFinalAnswer }} />
+                </div>
+              </label>
+
+              <label className="field" style={{ marginTop: 8 }}>
+                <span>Final answer copy helper</span>
+                <DescriptionEditor
+                  value={normalizeMathHtmlInput(selectedExercise.final_answer || '')}
+                  readOnly
+                  baseFontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}
+                  baseFontSize={18}
+                />
+              </label>
             </>
           )}
 
@@ -657,6 +689,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
           {visibleSteps.map((step, idx) => {
             const technique = techniquesById.get(step.techniqueId)
             const renderedProgress = renderMathInHtml(normalizeMathHtmlInput(step.progressState))
+            const renderedTechniqueDescription = renderMathInHtml(normalizeMathHtmlInput(technique?.effect_description || ''))
 
             return (
               <div key={step.localId} className="collection-toolbar" style={{ marginTop: 10 }}>
@@ -697,7 +730,26 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                     </label>
 
                     {technique && (
-                      <div className="saved-item-tags">Technique selected: {technique.name || 'Untitled'} ({technique.effect_type || 'N/A'})</div>
+                      <>
+                        <div className="saved-item-tags">Technique selected: {technique.name || 'Untitled'} ({technique.effect_type || 'N/A'})</div>
+
+                        <label className="field" style={{ marginTop: 10 }}>
+                          <span>Technique description preview</span>
+                          <div className="rt-editor" style={{ minHeight: 120 }}>
+                            <div className="card-description" dangerouslySetInnerHTML={{ __html: renderedTechniqueDescription }} />
+                          </div>
+                        </label>
+
+                        <label className="field" style={{ marginTop: 10 }}>
+                          <span>Technique description copy helper</span>
+                          <DescriptionEditor
+                            value={normalizeMathHtmlInput(technique.effect_description || '')}
+                            readOnly
+                            baseFontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}
+                            baseFontSize={18}
+                          />
+                        </label>
+                      </>
                     )}
 
                     <label className="field" style={{ marginTop: 10 }}>

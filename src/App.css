@@ -318,6 +318,42 @@ body {
   margin: 6px 0;
 }
 
+.card-description ul,
+.card-description ol,
+.rich-html ul,
+.rich-html ol {
+  margin: 8px 0 8px 22px;
+  padding-left: 18px;
+}
+
+.card-description ul,
+.rich-html ul {
+  list-style: disc;
+}
+
+.card-description ol,
+.rich-html ol {
+  list-style: decimal;
+}
+
+.card-description li,
+.rich-html li {
+  margin: 4px 0;
+}
+
+.card-description li > p,
+.rich-html li > p,
+.rt-editor .ProseMirror li > p {
+  margin: 0;
+}
+
+.card-description li .katex,
+.rich-html li .katex,
+.rt-editor .ProseMirror li .katex {
+  display: inline-block;
+  vertical-align: middle;
+}
+
 /* =========================
    Responsive
 ========================= */
@@ -411,6 +447,33 @@ body {
 .rt-editor .ProseMirror {
   outline: none;
   min-height: 140px;
+}
+
+.rt-editor.is-readonly {
+  background: #111;
+}
+
+.rt-editor.is-readonly .ProseMirror {
+  min-height: 0;
+  cursor: text;
+}
+
+.rt-editor .ProseMirror ul,
+.rt-editor .ProseMirror ol {
+  margin: 8px 0 8px 22px;
+  padding-left: 18px;
+}
+
+.rt-editor .ProseMirror ul {
+  list-style: disc;
+}
+
+.rt-editor .ProseMirror ol {
+  list-style: decimal;
+}
+
+.rt-editor .ProseMirror li {
+  margin: 4px 0;
 }
 
 /* ===== EcuaciÃ³n inline ===== */

@@ -42,39 +42,7 @@ export async function listApprovedCatalogCompetitiveTechniques() {
 }
 
 export async function listApprovedCompetitiveTechniques(userId) {
-  const collectionRows = await listStudentTechniqueCollectionEntries(userId)
-  const compatibleCollectionRows = collectionRows.filter((row) => Boolean(row.legacy_technique_id))
-  if (compatibleCollectionRows.length > 0) {
-    return compatibleCollectionRows.map((row) => ({
-      id: row.legacy_technique_id,
-      source_catalog_id: row.id,
-      created_by: row.created_by,
-      reviewed_by: row.reviewed_by,
-      approved_at: row.published_at,
-      status: 'approved',
-      name: row.name,
-      name_fr: row.name_fr,
-      topic: row.topic,
-      subtopic: row.subtopic,
-      effect_type: row.effect_type,
-      effect_description: row.effect_description,
-      effect_description_fr: row.effect_description_fr,
-      worked_example: row.worked_example,
-      worked_example_fr: row.worked_example_fr,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    }))
-  }
-
-  const { data, error } = await supabase
-    .from('competitive_techniques')
-    .select(TECHNIQUE_SELECT_FIELDS)
-    .eq('created_by', userId)
-    .eq('status', 'approved')
-    .order('updated_at', { ascending: false })
-
-  if (error) throw error
-  return Array.isArray(data) ? data : []
+  return listPrivateApprovedCompetitiveTechniques(userId)
 }
 
 export async function updateOwnCompetitiveTechnique(techniqueId, userId, payload) {
@@ -145,15 +113,91 @@ const TECHNIQUE_CATALOG_SELECT_FIELDS =
 const TECHNIQUE_PROPOSAL_SELECT_FIELDS =
   'id, legacy_technique_id, created_by, reviewed_by, published_catalog_id, status, approved_at, name, name_fr, topic, subtopic, effect_type, effect_description, effect_description_fr, worked_example, worked_example_fr, created_at, updated_at'
 
-export async function listApprovedTechniqueCatalogEntries() {
-  const { data, error } = await supabase
-    .from('competitive_technique_catalog')
-    .select(TECHNIQUE_CATALOG_SELECT_FIELDS)
-    .eq('status', 'approved')
-    .order('updated_at', { ascending: false })
+function normalizeTechniqueKeyPart(value) {
+  return String(value || '').trim().toLowerCase()
+}
 
-  if (error) throw error
-  return Array.isArray(data) ? data : []
+function buildTechniqueCatalogMatchKey(row) {
+  return [
+    row?.created_by,
+    row?.name,
+    row?.topic,
+    row?.subtopic,
+    row?.effect_type,
+    row?.effect_description,
+  ]
+    .map(normalizeTechniqueKeyPart)
+    .join('||')
+}
+
+export async function listApprovedTechniqueCatalogEntries() {
+  const [{ data: catalogRows, error: catalogError }, { data: proposalRows, error: proposalError }] = await Promise.all([
+    supabase
+      .from('competitive_technique_catalog')
+      .select(TECHNIQUE_CATALOG_SELECT_FIELDS)
+      .eq('status', 'approved')
+      .order('updated_at', { ascending: false }),
+    supabase
+      .from('competitive_technique_proposals')
+      .select(TECHNIQUE_PROPOSAL_SELECT_FIELDS)
+      .eq('status', 'approved')
+      .order('updated_at', { ascending: false }),
+  ])
+
+  if (catalogError) throw catalogError
+  if (proposalError) throw proposalError
+
+  const approvedCatalogRows = Array.isArray(catalogRows) ? catalogRows : []
+  const approvedProposalRows = Array.isArray(proposalRows) ? proposalRows : []
+  const items = approvedCatalogRows.map((row) => ({
+    ...row,
+    catalog_id: row.id,
+    has_catalog_entry: true,
+  }))
+
+  const catalogIds = new Set(approvedCatalogRows.map((row) => row.id).filter(Boolean))
+  const legacyIds = new Set(approvedCatalogRows.map((row) => row.legacy_technique_id).filter(Boolean))
+  const contentKeys = new Set(approvedCatalogRows.map((row) => buildTechniqueCatalogMatchKey(row)).filter(Boolean))
+
+  approvedProposalRows.forEach((row) => {
+    const hasCatalogMatch =
+      (row.published_catalog_id && catalogIds.has(row.published_catalog_id)) ||
+      (row.legacy_technique_id && legacyIds.has(row.legacy_technique_id)) ||
+      contentKeys.has(buildTechniqueCatalogMatchKey(row))
+
+    if (hasCatalogMatch) return
+
+    items.push({
+      id: `proposal:${row.id}`,
+      catalog_id: null,
+      has_catalog_entry: false,
+      legacy_technique_id: row.legacy_technique_id,
+      created_by: row.created_by,
+      reviewed_by: row.reviewed_by,
+      status: 'approved',
+      published_at: row.approved_at,
+      archived_at: null,
+      name: row.name,
+      name_fr: row.name_fr,
+      topic: row.topic,
+      subtopic: row.subtopic,
+      effect_type: row.effect_type,
+      effect_description: row.effect_description,
+      effect_description_fr: row.effect_description_fr,
+      worked_example: row.worked_example,
+      worked_example_fr: row.worked_example_fr,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      orphaned_proposal_id: row.id,
+    })
+  })
+
+  items.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
+  return items
+}
+
+export async function listGlobalCompetitiveTechniqueCatalog() {
+  return listApprovedTechniqueCatalogEntries()
 }
 
 export async function deleteTechniqueCatalogEntryAsTeacher(catalogTechniqueId) {
@@ -236,6 +280,57 @@ export async function listStudentTechniqueCollectionEntries(studentUserId) {
     .filter(Boolean)
 }
 
+export async function listPrivateApprovedCompetitiveTechniques(userId) {
+  const [collectionRows, proposalRows] = await Promise.all([
+    listStudentTechniqueCollectionEntries(userId),
+    supabase
+      .from('competitive_technique_proposals')
+      .select(TECHNIQUE_PROPOSAL_SELECT_FIELDS)
+      .eq('created_by', userId)
+      .eq('status', 'approved')
+      .order('updated_at', { ascending: false }),
+  ])
+
+  const { data: approvedProposalRows, error: proposalsError } = proposalRows
+  if (proposalsError) throw proposalsError
+
+  const items = []
+  const seenKeys = new Set()
+
+  const pushUnique = (key, value) => {
+    if (!key || seenKeys.has(key)) return
+    seenKeys.add(key)
+    items.push(value)
+  }
+
+  collectionRows.forEach((row) => {
+    const sourceKey = row.id || row.source_catalog_id || row.legacy_technique_id
+    pushUnique(`catalog:${sourceKey}`, {
+      ...row,
+      scope: 'private_collection',
+      is_owner_copy: row.created_by === userId,
+    })
+  })
+
+  ;(Array.isArray(approvedProposalRows) ? approvedProposalRows : []).forEach((row) => {
+    const sourceKey = row.published_catalog_id || row.legacy_technique_id || row.id
+    pushUnique(`catalog:${sourceKey}`, {
+      ...row,
+      scope: 'private_collection',
+      collection_source: row.published_catalog_id ? 'published_proposal' : 'approved_proposal',
+      collected_at: row.approved_at || row.updated_at || row.created_at,
+      is_owner_copy: true,
+    })
+  })
+
+  items.sort((a, b) => String(b.collected_at || b.updated_at || '').localeCompare(String(a.collected_at || a.updated_at || '')))
+  return items
+}
+
+export async function listPrivateCompetitiveTechniqueInventory(userId) {
+  return listPrivateApprovedCompetitiveTechniques(userId)
+}
+
 export async function listProposedCompetitiveTechniques() {
   const { data, error } = await supabase
     .from('competitive_technique_proposals')
@@ -258,6 +353,10 @@ export async function listOwnCompetitiveTechniqueProposals(userId) {
   return Array.isArray(data) ? data : []
 }
 
+export async function listEditableCompetitiveTechniqueProposals(userId) {
+  return listOwnCompetitiveTechniqueProposals(userId)
+}
+
 export async function createCompetitiveTechniqueProposal(payload) {
   const { data, error } = await supabase
     .from('competitive_technique_proposals')
@@ -266,6 +365,10 @@ export async function createCompetitiveTechniqueProposal(payload) {
     .single()
 
   if (error) throw error
+  if (data?.status === 'approved' && data?.reviewed_by) {
+    return publishCompetitiveTechniqueProposalRecord(data, data.reviewed_by)
+  }
+
   return data
 }
 
@@ -279,6 +382,10 @@ export async function updateOwnCompetitiveTechniqueProposal(proposalId, userId, 
     .single()
 
   if (error) throw error
+  if (data?.status === 'approved' && data?.reviewed_by) {
+    return publishCompetitiveTechniqueProposalRecord(data, data.reviewed_by)
+  }
+
   return data
 }
 
@@ -293,32 +400,7 @@ export async function deleteOwnCompetitiveTechniqueProposal(proposalId, userId) 
   return true
 }
 
-export async function reviewProposedCompetitiveTechnique(proposalId, teacherUserId, decision) {
-  const { data: proposal, error: proposalError } = await supabase
-    .from('competitive_technique_proposals')
-    .select(TECHNIQUE_PROPOSAL_SELECT_FIELDS)
-    .eq('id', proposalId)
-    .eq('status', 'proposed')
-    .single()
-
-  if (proposalError) throw proposalError
-
-  if (decision !== 'approve') {
-    const { data, error } = await supabase
-      .from('competitive_technique_proposals')
-      .update({
-        status: 'rejected',
-        reviewed_by: teacherUserId,
-        approved_at: null,
-      })
-      .eq('id', proposalId)
-      .select(TECHNIQUE_PROPOSAL_SELECT_FIELDS)
-      .single()
-
-    if (error) throw error
-    return data
-  }
-
+async function publishCompetitiveTechniqueProposalRecord(proposal, teacherUserId) {
   const nowIso = new Date().toISOString()
   let catalogId = proposal.published_catalog_id || null
   let legacyTechniqueId = proposal.legacy_technique_id || null
@@ -428,7 +510,7 @@ export async function reviewProposedCompetitiveTechnique(proposalId, teacherUser
       approved_at: nowIso,
       published_catalog_id: catalogId,
     })
-    .eq('id', proposalId)
+    .eq('id', proposal.id)
     .select(TECHNIQUE_PROPOSAL_SELECT_FIELDS)
     .single()
 
@@ -442,6 +524,35 @@ export async function reviewProposedCompetitiveTechnique(proposalId, teacherUser
   }
 
   return data
+}
+
+export async function reviewProposedCompetitiveTechnique(proposalId, teacherUserId, decision) {
+  const { data: proposal, error: proposalError } = await supabase
+    .from('competitive_technique_proposals')
+    .select(TECHNIQUE_PROPOSAL_SELECT_FIELDS)
+    .eq('id', proposalId)
+    .eq('status', 'proposed')
+    .single()
+
+  if (proposalError) throw proposalError
+
+  if (decision !== 'approve') {
+    const { data, error } = await supabase
+      .from('competitive_technique_proposals')
+      .update({
+        status: 'rejected',
+        reviewed_by: teacherUserId,
+        approved_at: null,
+      })
+      .eq('id', proposalId)
+      .select(TECHNIQUE_PROPOSAL_SELECT_FIELDS)
+      .single()
+
+    if (error) throw error
+    return data
+  }
+
+  return publishCompetitiveTechniqueProposalRecord(proposal, teacherUserId)
 }
 
 export { TECHNIQUE_PROPOSAL_SELECT_FIELDS, TECHNIQUE_SELECT_FIELDS }

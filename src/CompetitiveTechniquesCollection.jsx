@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { listStudentTechniqueCollectionEntries } from './data/competitiveTechniquesRepo'
+import { listPrivateCompetitiveTechniqueInventory } from './data/competitiveTechniquesRepo'
+import { listProfileUsernamesByIds } from './data/profilesRepo'
 import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
@@ -20,6 +21,7 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
   const [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState(null)
   const [activeLanguage, setActiveLanguage] = useState('es')
+  const [creatorNamesById, setCreatorNamesById] = useState({})
 
   const [topicFilter, setTopicFilter] = useState('')
   const [subtopicFilter, setSubtopicFilter] = useState('')
@@ -44,8 +46,15 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
     setError('')
 
     try {
-      const rows = await listStudentTechniqueCollectionEntries(session.userId)
+      const rows = await listPrivateCompetitiveTechniqueInventory(session.userId)
       setItems(rows)
+
+      try {
+        const creatorNames = await listProfileUsernamesByIds(rows.map((row) => row.created_by))
+        setCreatorNamesById(creatorNames)
+      } catch {
+        setCreatorNamesById({})
+      }
 
       if (!selectedId && rows.length > 0) {
         setSelectedId(rows[0].id)
@@ -117,7 +126,7 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
 
       <div className="competitive-layout">
         <div className="assets-panel">
-          <div className="saved-title">My Catalog Copies</div>
+          <div className="saved-title">My Approved Techniques</div>
 
           <div className="collection-toolbar">
             <label className="field">
@@ -164,7 +173,7 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
             </button>
           </div>
 
-          <div className="saved-empty">This collection represents the techniques you have obtained from the approved global catalog.</div>
+          <div className="saved-empty">This collection includes your approved techniques plus approved copies you collected from the global catalog.</div>
 
           <div className="saved-list competitive-list" style={{ marginTop: 10 }}>
             {loading && <div className="saved-empty">Loading collection...</div>}
@@ -174,7 +183,15 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
                 <div className="saved-item-name">{item.name || 'Untitled technique'}</div>
                 {item.name_fr && <div className="saved-item-tags">FR: {item.name_fr}</div>}
                 <div className="saved-item-date">Added: {formatDate(item.collected_at)}</div>
-                <div className="saved-item-tags">Scope: My collection copy</div>
+                <div className="saved-item-tags">
+                  Scope: {item.is_owner_copy ? 'My approved technique' : 'My collection copy'}
+                </div>
+                <div className="saved-item-tags">
+                  Original author: {creatorNamesById[item.created_by] || item.created_by || 'Unknown'}
+                </div>
+                {item.created_by && item.created_by !== session.userId && (
+                  <div className="saved-item-tags">Copied from another creator</div>
+                )}
                 <div className="saved-item-tags">Topic: {item.topic || 'N/A'} / {item.subtopic || 'N/A'}</div>
                 <button type="button" className="btn" onClick={() => setSelectedId(item.id)}>
                   View
@@ -192,7 +209,15 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
               <div className="saved-title">Technique Detail</div>
               <div className="saved-item-date">Added: {formatDate(selected.collected_at)}</div>
               <div className="saved-item-tags">Source: {selected.collection_source || 'copied'}</div>
-              <div className="saved-item-tags">Scope: My collection copy</div>
+              <div className="saved-item-tags">
+                Scope: {selected.is_owner_copy ? 'My approved technique' : 'My collection copy'}
+              </div>
+              <div className="saved-item-tags">
+                Original author: {creatorNamesById[selected.created_by] || selected.created_by || 'Unknown'}
+              </div>
+              {selected.created_by && selected.created_by !== session.userId && (
+                <div className="saved-item-tags">This copy belongs to another creator's approved technique.</div>
+              )}
               <div className="saved-item-tags">Approved for collection usage</div>
 
               <div className="auth-tabs" style={{ marginTop: 12 }}>

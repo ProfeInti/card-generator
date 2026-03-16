@@ -17,7 +17,7 @@ function toPositiveInt(value, fallback) {
   return n
 }
 
-export default function DescriptionEditor({ value, onChange, baseFontFamily, baseFontSize }) {
+export default function DescriptionEditor({ value, onChange, baseFontFamily, baseFontSize, readOnly = false }) {
   const [textColor, setTextColor] = useState('#b6fff0')
   const [imageUrlInput, setImageUrlInput] = useState('')
   const fileInputRef = useRef(null)
@@ -37,7 +37,11 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
       TableCell,
     ],
     content: value,
-    onUpdate: ({ editor }) => onChange(editor.getHTML()),
+    editable: !readOnly,
+    onUpdate: ({ editor }) => {
+      if (readOnly || typeof onChange !== 'function') return
+      onChange(editor.getHTML())
+    },
   })
 
   useEffect(() => {
@@ -99,10 +103,17 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
     if (mark === 'underline') editor.chain().focus().toggleUnderline().run()
   }
 
+  const toggleList = (type) => {
+    if (!editor) return
+    if (type === 'bullet') editor.chain().focus().toggleBulletList().run()
+    if (type === 'ordered') editor.chain().focus().toggleOrderedList().run()
+  }
+
   if (!editor) return null
 
   return (
     <div className="rt-wrap">
+      {!readOnly && (
       <div className="rt-toolbar">
         <button
           type="button"
@@ -160,6 +171,28 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
           title="Clear color"
         >
           Clear color
+        </button>
+
+        <div className="rt-sep" />
+
+        <button
+          type="button"
+          className={`rt-btn ${editor.isActive('bulletList') ? 'is-on' : ''}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => toggleList('bullet')}
+          title="Bullet list"
+        >
+          • List
+        </button>
+
+        <button
+          type="button"
+          className={`rt-btn ${editor.isActive('orderedList') ? 'is-on' : ''}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => toggleList('ordered')}
+          title="Numbered list"
+        >
+          1. List
         </button>
 
         <div className="rt-sep" />
@@ -319,9 +352,10 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
 
         <div className="rt-hint">Tip: use image URL/upload and tables for graph statements and structured data.</div>
       </div>
+      )}
 
       <div
-        className="rt-editor"
+        className={`rt-editor ${readOnly ? 'is-readonly' : ''}`}
         style={{
           fontFamily: baseFontFamily,
           fontSize: `${baseFontSize}px`,

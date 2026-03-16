@@ -87,7 +87,7 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
   const [selectedPath, setSelectedPath] = useState(DEFAULT_PATH)
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
-  const [currentProgressState, setCurrentProgressState] = useState('')
+  const [progressHistory, setProgressHistory] = useState([])
   const [selectedTechniqueId, setSelectedTechniqueId] = useState('')
   const [feedback, setFeedback] = useState(null)
   const [completed, setCompleted] = useState(false)
@@ -200,12 +200,17 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
   )
 
   const renderedProgress = useMemo(
-    () => renderMathInHtml(normalizeMathHtmlInput(currentProgressState)),
-    [currentProgressState]
+    () =>
+      progressHistory.map((item) => ({
+        ...item,
+        renderedHtml: renderMathInHtml(normalizeMathHtmlInput(item.html || '')),
+      })),
+    [progressHistory]
   )
 
   const resetTrainingState = useCallback(() => {
     setCurrentStepIndex(0)
+    setProgressHistory([])
     setSelectedTechniqueId('')
     setCompleted(false)
     setTechniqueSearch('')
@@ -263,7 +268,13 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
       resetTrainingState()
 
       const initialState = normalizeMathHtmlInput(response?.exercise?.statement || '')
-      setCurrentProgressState(initialState)
+      setProgressHistory([
+        {
+          id: 'exercise-statement',
+          label: 'Exercise statement',
+          html: initialState,
+        },
+      ])
 
       const pathStepCount = rows.filter((step) => normalizePathKey(step.solution_path) === nextPath).length
       if (pathStepCount === 0) {
@@ -302,7 +313,13 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
     if (!detail?.exercise) return
 
     resetTrainingState()
-    setCurrentProgressState(normalizeMathHtmlInput(detail.exercise.statement || ''))
+    setProgressHistory([
+      {
+        id: 'exercise-statement',
+        label: 'Exercise statement',
+        html: normalizeMathHtmlInput(detail.exercise.statement || ''),
+      },
+    ])
 
     if (!steps.length) {
       setFeedback({ type: 'info', message: 'This path has no steps yet.' })
@@ -325,7 +342,14 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
     }
 
     const nextProgress = normalizeMathHtmlInput(currentStep.progress_state)
-    setCurrentProgressState(nextProgress)
+    setProgressHistory((prev) => [
+      ...prev,
+      {
+        id: `step-${currentStep.id || currentStepIndex + 1}`,
+        label: `Step ${currentStep.step_order || currentStepIndex + 1}`,
+        html: nextProgress,
+      },
+    ])
 
     const isLastStep = currentStepIndex >= steps.length - 1
     if (isLastStep) {
@@ -430,9 +454,14 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
                   <div className="saved-item-tags">
                     Path: {formatPathLabel(selectedPath)} | Step {steps.length === 0 ? 0 : Math.min(currentStepIndex + 1, steps.length)} of {steps.length}
                   </div>
-                  <div className="rt-editor training-math-box">
-                    <div className="card-description" dangerouslySetInnerHTML={{ __html: renderedProgress }} />
-                  </div>
+                  {renderedProgress.map((item) => (
+                    <div key={item.id} className="collection-toolbar" style={{ marginTop: 10 }}>
+                      <div className="saved-item-tags">{item.label}</div>
+                      <div className="rt-editor training-math-box">
+                        <div className="card-description" dangerouslySetInnerHTML={{ __html: item.renderedHtml }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="training-card">

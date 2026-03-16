@@ -3,7 +3,7 @@ import {
   addTechniqueCatalogEntryToStudentCollection,
   archiveTechniqueCatalogEntryAsTeacher,
   deleteTechniqueCatalogEntryAsTeacher,
-  listApprovedTechniqueCatalogEntries,
+  listGlobalCompetitiveTechniqueCatalog,
 } from './data/competitiveTechniquesRepo'
 import { listProfileUsernamesByIds } from './data/profilesRepo'
 import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
@@ -54,7 +54,7 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
     setError('')
 
     try {
-      const rows = await listApprovedTechniqueCatalogEntries()
+      const rows = await listGlobalCompetitiveTechniqueCatalog()
       setItems(rows)
 
       try {
@@ -112,7 +112,7 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
   }, [items, nameSearch, topicFilter, subtopicFilter, effectTypeFilter])
 
   const handleTeacherDelete = async (technique) => {
-    if (!isTeacher || !technique?.id) return
+    if (!isTeacher || !technique?.catalog_id) return
     if (!window.confirm(`Delete approved technique "${technique.name || 'Untitled technique'}" from the global catalog?`)) return
 
     setActionLoading(true)
@@ -120,7 +120,7 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
     setNotice('')
 
     try {
-      await deleteTechniqueCatalogEntryAsTeacher(technique.id)
+      await deleteTechniqueCatalogEntryAsTeacher(technique.catalog_id)
       if (selectedId === technique.id) setSelectedId(null)
       await loadItems()
       setNotice('Technique deleted from the catalog.')
@@ -129,7 +129,7 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
 
       if (isRestrictedDelete) {
         try {
-          await archiveTechniqueCatalogEntryAsTeacher(technique.id)
+          await archiveTechniqueCatalogEntryAsTeacher(technique.catalog_id)
           if (selectedId === technique.id) setSelectedId(null)
           await loadItems()
           setNotice('Technique was archived and removed from the active catalog.')
@@ -145,14 +145,14 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
   }
 
   const handleCopyToCollection = async (technique) => {
-    if (!technique?.id) return
+    if (!technique?.catalog_id) return
 
     setActionLoading(true)
     setError('')
     setNotice('')
 
     try {
-      await addTechniqueCatalogEntryToStudentCollection(session.userId, technique.id)
+      await addTechniqueCatalogEntryToStudentCollection(session.userId, technique.catalog_id)
       setNotice('Technique added to your collection.')
     } catch (err) {
       const isDuplicate = err?.code === '23505' || /duplicate key/i.test(String(err?.message || ''))
@@ -248,15 +248,16 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
                 <div className="saved-item-date">Updated: {formatDate(item.updated_at)}</div>
                 <div className="saved-item-tags">Creator: {creatorNamesById[item.created_by] || item.created_by || 'Unknown'}</div>
                 <div className="saved-item-tags">Topic: {item.topic || 'N/A'} / {item.subtopic || 'N/A'}</div>
+                {!item.has_catalog_entry && <div className="saved-item-tags">Pending catalog materialization</div>}
                 <div className="saved-item-actions">
                   <button type="button" className="btn" onClick={() => setSelectedId(item.id)}>
                     View
                   </button>
-                  <button type="button" className="btn" onClick={() => handleCopyToCollection(item)} disabled={actionLoading}>
+                  <button type="button" className="btn" onClick={() => handleCopyToCollection(item)} disabled={actionLoading || !item.has_catalog_entry}>
                     {actionLoading ? 'Processing...' : 'Copy'}
                   </button>
                   {isTeacher && (
-                    <button type="button" className="btn danger" onClick={() => handleTeacherDelete(item)} disabled={actionLoading}>
+                    <button type="button" className="btn danger" onClick={() => handleTeacherDelete(item)} disabled={actionLoading || !item.has_catalog_entry}>
                       {actionLoading ? 'Processing...' : 'Delete'}
                     </button>
                   )}
@@ -276,6 +277,7 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
               <div className="saved-item-tags">Status: {selected.status}</div>
               <div className="saved-item-tags">Creator: {creatorNamesById[selected.created_by] || selected.created_by || 'Unknown'}</div>
               <div className="saved-item-tags">Scope: Global approved catalog</div>
+              {!selected.has_catalog_entry && <div className="saved-item-tags">This approved technique has not been materialized into the catalog table yet.</div>}
 
               <div className="auth-tabs" style={{ marginTop: 12 }}>
                 {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
@@ -312,11 +314,11 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
               </label>
 
               <div className="saved-item-actions">
-                <button type="button" className="btn" onClick={() => handleCopyToCollection(selected)} disabled={actionLoading}>
+                <button type="button" className="btn" onClick={() => handleCopyToCollection(selected)} disabled={actionLoading || !selected.has_catalog_entry}>
                   {actionLoading ? 'Processing...' : 'Copy to My Collection'}
                 </button>
                 {isTeacher && (
-                  <button type="button" className="btn danger" onClick={() => handleTeacherDelete(selected)} disabled={actionLoading}>
+                  <button type="button" className="btn danger" onClick={() => handleTeacherDelete(selected)} disabled={actionLoading || !selected.has_catalog_entry}>
                     {actionLoading ? 'Processing...' : 'Delete Technique'}
                   </button>
                 )}

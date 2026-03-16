@@ -3,7 +3,7 @@ import DescriptionEditor from './DescriptionEditor'
 import {
   createCompetitiveTechniqueProposal,
   deleteOwnCompetitiveTechniqueProposal,
-  listOwnCompetitiveTechniqueProposals,
+  listEditableCompetitiveTechniqueProposals,
   updateOwnCompetitiveTechniqueProposal,
 } from './data/competitiveTechniquesRepo'
 import { TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
@@ -139,7 +139,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     setError('')
 
     try {
-      const rows = await listOwnCompetitiveTechniqueProposals(session.userId)
+      const rows = await listEditableCompetitiveTechniqueProposals(session.userId)
       setRecords(rows)
     } catch (err) {
       setError(err?.message || 'Could not load competitive technique proposals.')
@@ -243,7 +243,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
       if (!importedRecords.length) throw new Error('No techniques found in JSON file.')
 
       const allowedStatuses = role === 'teacher' ? STATUS_OPTIONS : STUDENT_STATUS_OPTIONS
-      const existingRows = await listOwnCompetitiveTechniqueProposals(session.userId)
+      const existingRows = await listEditableCompetitiveTechniqueProposals(session.userId)
       const existingByKey = new Map()
       existingRows.forEach((row) => {
         const key = buildTechniqueImportKey(row)
