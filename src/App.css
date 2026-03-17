@@ -1228,6 +1228,24 @@ math-virtual-keyboard,
   grid-template-columns: minmax(160px, 220px) minmax(170px, 1fr) auto minmax(170px, 1fr) auto;
 }
 
+.construct-image-preview-card {
+  margin-bottom: 12px;
+  border: 1px solid #2f2f2f;
+  border-radius: 12px;
+  padding: 10px;
+  background: #171717;
+}
+
+.construct-image-preview {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  display: block;
+  border-radius: 10px;
+  border: 1px solid #2f2f2f;
+  background: #101010;
+}
+
 .mp-battlefield-shell {
   display: grid;
   grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(180px, 220px);
@@ -1314,6 +1332,33 @@ math-virtual-keyboard,
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.mp-construct-art-frame {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid #2f2f2f;
+  background:
+    radial-gradient(circle at top, rgba(255, 220, 120, 0.12), transparent 45%),
+    linear-gradient(180deg, #1f1a12 0%, #121212 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 214, 109, 0.08);
+}
+
+.mp-construct-art-frame.is-hand {
+  margin: 8px 0 10px;
+}
+
+.mp-construct-art-frame.is-detail {
+  max-width: 280px;
+}
+
+.mp-construct-art {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .mp-slot-card.is-empty {

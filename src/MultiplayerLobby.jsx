@@ -11,6 +11,7 @@ import {
   setMultiplayerRoomReady,
   startMatchForRoom,
 } from './data/multiplayerLobbyRepo'
+import { listMultiplayerDeckSummariesByUserIds } from './data/multiplayerDeckRepo'
 import { listProfileUsernamesByIds } from './data/profilesRepo'
 
 function formatDate(value) {
@@ -20,11 +21,12 @@ function formatDate(value) {
   return parsed.toLocaleString()
 }
 
-export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, onLogout }) {
+export default function MultiplayerLobby({ session, onBackToMenu, onOpenDeckBuilder, onOpenMatch, onLogout }) {
   const [rooms, setRooms] = useState([])
   const [playersByRoomId, setPlayersByRoomId] = useState({})
   const [latestMatchByRoomId, setLatestMatchByRoomId] = useState({})
   const [usernameById, setUsernameById] = useState({})
+  const [deckSummaryByUserId, setDeckSummaryByUserId] = useState({})
 
   const [newRoomName, setNewRoomName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -65,9 +67,14 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, o
         ...matchRows.map((row) => row.player1_id).filter(Boolean),
         ...matchRows.map((row) => row.player2_id).filter(Boolean),
         ...matchRows.map((row) => row.current_turn_user_id).filter(Boolean),
+        session.userId,
       ])]
-      const usernames = await listProfileUsernamesByIds(userIds)
+      const [usernames, deckSummaries] = await Promise.all([
+        listProfileUsernamesByIds(userIds),
+        listMultiplayerDeckSummariesByUserIds(userIds),
+      ])
       setUsernameById(usernames)
+      setDeckSummaryByUserId(deckSummaries)
     } catch (err) {
       setError(err?.message || 'Could not load multiplayer lobby.')
     } finally {
@@ -86,8 +93,12 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, o
       const playerIds = players.map((row) => row.user_id)
       const isMember = playerIds.includes(session.userId)
       const currentPlayer = players.find((row) => row.user_id === session.userId) || null
+      const currentPlayerDeckCount = deckSummaryByUserId[session.userId]?.count || 0
       const ownerName = usernameById[room.created_by] || room.created_by
       const playerNames = players.map((row) => usernameById[row.user_id] || row.user_id)
+      const playerDecksLabel = players
+        .map((row) => `${usernameById[row.user_id] || row.user_id} (${deckSummaryByUserId[row.user_id]?.count || 0})`)
+        .join(', ')
       const readyCount = players.filter((row) => Boolean(row.is_ready)).length
       const allPlayersReady = players.length === 2 && readyCount === players.length
       const matchPlayersLabel = latestMatch
@@ -106,14 +117,17 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, o
         isMember,
         currentPlayer,
         playerCount: players.length,
+        playerDecksLabel,
         readyCount,
         allPlayersReady,
+        currentPlayerDeckCount,
         isCurrentPlayerReady: Boolean(currentPlayer?.is_ready),
         isFull: players.length >= Number(room.max_players || 2),
         canStartMatch: isMember && room.status === 'open' && allPlayersReady,
+        hasValidCurrentPlayerDeck: currentPlayerDeckCount >= 3,
       }
     })
-  }, [rooms, playersByRoomId, latestMatchByRoomId, usernameById, session.userId])
+  }, [rooms, playersByRoomId, latestMatchByRoomId, usernameById, deckSummaryByUserId, session.userId])
 
   const createRoom = async () => {
     setSaving(true)
@@ -269,6 +283,10 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, o
           <div className="saved-empty">Phase 2: rooms can now initialize match snapshots from approved constructs.</div>
           <div className="saved-empty">A player stays in an open room only while remaining inside the multiplayer menu.</div>
           <div className="saved-empty">A match can start only when both players confirm they are ready.</div>
+          <div className="saved-empty">
+            Your multiplayer deck: {deckSummaryByUserId[session.userId]?.count || 0} construct(s).
+            {(deckSummaryByUserId[session.userId]?.count || 0) >= 3 ? ' Ready to queue.' : ' Add at least 3 before marking ready.'}
+          </div>
 
           <label className="field">
             <span>Room Name</span>
@@ -282,6 +300,9 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, o
           <div className="saved-item-actions">
             <button type="button" className="btn" onClick={createRoom} disabled={saving}>
               {saving ? 'Processing...' : 'Create Public Room'}
+            </button>
+            <button type="button" className="btn" onClick={onOpenDeckBuilder} disabled={saving}>
+              Manage Deck
             </button>
             <button type="button" className="btn" onClick={loadLobby} disabled={loading || saving}>
               {loading ? 'Refreshing...' : 'Refresh Lobby'}
@@ -306,7 +327,11 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, o
                 <div className="saved-item-tags">Status: {room.status}</div>
                 <div className="saved-item-tags">Players: {room.playerCount} / {room.max_players}</div>
                 <div className="saved-item-tags">Members: {room.playerNames.join(', ') || 'None'}</div>
+                {room.players.length > 0 && <div className="saved-item-tags">Decks: {room.playerDecksLabel}</div>}
                 {room.status === 'open' && <div className="saved-item-tags">Ready: {room.readyCount} / 2</div>}
+                {room.isMember && room.status === 'open' && !room.hasValidCurrentPlayerDeck && (
+                  <div className="saved-item-tags">Your deck needs at least 3 approved constructs before you can ready up.</div>
+                )}
 
                 {room.players.length > 0 && room.status === 'open' && (
                   <div className="saved-item-tags">
@@ -335,7 +360,7 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, o
                       type="button"
                       className="btn"
                       onClick={() => handleToggleReady(room.id, !room.isCurrentPlayerReady)}
-                      disabled={saving}
+                      disabled={saving || !room.hasValidCurrentPlayerDeck}
                     >
                       {room.isCurrentPlayerReady ? 'Cancel Ready' : 'Ready'}
                     </button>
@@ -368,6 +393,12 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenMatch, o
                   {room.isMember && room.status === 'open' && !room.canStartMatch && room.playerCount === 2 && (
                     <button type="button" className="btn" disabled>
                       Waiting for Both Ready
+                    </button>
+                  )}
+
+                  {room.isMember && room.status === 'open' && !room.hasValidCurrentPlayerDeck && (
+                    <button type="button" className="btn" onClick={onOpenDeckBuilder} disabled={saving}>
+                      Build Deck
                     </button>
                   )}
 

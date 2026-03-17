@@ -12,6 +12,7 @@ import {
   updateConstruct,
   updateConstructStep,
 } from './data/competitiveConstructsRepo'
+import { DEFAULT_ART_DATA_URL } from './lib/cardWorkspace'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 const STATUS_OPTIONS = ['draft', 'proposed', 'approved', 'rejected']
@@ -25,6 +26,7 @@ const EMPTY_FORM = {
   exerciseId: '',
   title: '',
   description: '',
+  imageUrl: '',
   attack: '0',
   armor: '0',
   ingenuityCost: '0',
@@ -44,6 +46,16 @@ function toNonNegativeInt(value, fallback = 0) {
   const parsed = Number(normalized)
   if (!Number.isInteger(parsed) || parsed < 0) return null
   return parsed
+}
+
+function normalizeImageUrl(value) {
+  const normalized = String(value || '').trim()
+  return normalized || ''
+}
+
+function isAcceptedImageUrl(value) {
+  if (!value) return true
+  return /^https?:\/\//i.test(value) || value.startsWith('data:image/')
 }
 
 function normalizePathKey(value) {
@@ -247,6 +259,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
         exerciseId: String(row.exercise_id || ''),
         title: String(row.title || ''),
         description: String(row.description || ''),
+        imageUrl: String(row.image_url || ''),
         attack: String(row.attack ?? 0),
         armor: String(row.armor ?? 0),
         ingenuityCost: String(row.ingenuity_cost ?? 0),
@@ -379,6 +392,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
 
   const canSave = useMemo(() => {
     if (!form.exerciseId || !String(form.title || '').trim()) return false
+    if (!isAcceptedImageUrl(normalizeImageUrl(form.imageUrl))) return false
     if (
       toNonNegativeInt(form.attack) === null ||
       toNonNegativeInt(form.armor) === null ||
@@ -386,7 +400,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     ) return false
     if (!steps.length) return false
     return steps.every((step) => step.techniqueId && String(step.progressState || '').trim())
-  }, [form.exerciseId, form.title, form.attack, form.armor, form.ingenuityCost, steps])
+  }, [form.exerciseId, form.title, form.imageUrl, form.attack, form.armor, form.ingenuityCost, steps])
 
   const saveConstruct = async () => {
     setSaving(true)
@@ -396,6 +410,9 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
     try {
       if (!form.exerciseId) throw new Error('You must select an approved exercise.')
       if (!String(form.title || '').trim()) throw new Error('Construct title is required.')
+      if (!isAcceptedImageUrl(normalizeImageUrl(form.imageUrl))) {
+        throw new Error('Construct image must be an http/https URL or a data:image value.')
+      }
       if (toNonNegativeInt(form.attack) === null) throw new Error('Attack must be a non-negative integer.')
       if (toNonNegativeInt(form.armor) === null) throw new Error('Armor must be a non-negative integer.')
       if (toNonNegativeInt(form.ingenuityCost) === null) throw new Error('Ingenuity Cost must be a non-negative integer.')
@@ -407,6 +424,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
         exercise_id: form.exerciseId,
         title: String(form.title || '').trim(),
         description: String(form.description || '').trim() || null,
+        image_url: normalizeImageUrl(form.imageUrl) || null,
         attack: toNonNegativeInt(form.attack, 0),
         armor: toNonNegativeInt(form.armor, 0),
         ingenuity_cost: toNonNegativeInt(form.ingenuityCost, 0),
@@ -617,6 +635,50 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
             <span>Description</span>
             <textarea value={form.description} onChange={(e) => updateFormField('description', e.target.value)} rows={3} />
           </label>
+
+          <label className="field">
+            <span>Construct image URL</span>
+            <input
+              value={form.imageUrl}
+              onChange={(e) => updateFormField('imageUrl', e.target.value)}
+              placeholder="https://image-url"
+            />
+          </label>
+
+          <label className="field">
+            <span>Upload construct image</span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (!file) return
+                const reader = new FileReader()
+                reader.onloadend = () => {
+                  updateFormField('imageUrl', String(reader.result || ''))
+                }
+                reader.readAsDataURL(file)
+                event.target.value = ''
+              }}
+            />
+          </label>
+
+          <div className="saved-empty">
+            Recommended: use an external image URL to avoid storing large data URLs in the database.
+          </div>
+
+          <div className="construct-image-preview-card">
+            <div className="saved-title">Construct image preview</div>
+            <img
+              className="construct-image-preview"
+              src={normalizeImageUrl(form.imageUrl) || DEFAULT_ART_DATA_URL}
+              alt="Construct preview"
+              onError={(event) => {
+                event.currentTarget.onerror = null
+                event.currentTarget.src = DEFAULT_ART_DATA_URL
+              }}
+            />
+          </div>
 
           <div className="competitive-grid">
             <label className="field">

@@ -15,6 +15,7 @@ const CompetitiveConstructReviewPanel = lazy(() => import('./CompetitiveConstruc
 const CompetitiveTrainingMode = lazy(() => import('./CompetitiveTrainingMode'))
 const MultiplayerLobby = lazy(() => import('./MultiplayerLobby'))
 const MultiplayerMatch = lazy(() => import('./MultiplayerMatch'))
+const MultiplayerDeckBuilder = lazy(() => import('./MultiplayerDeckBuilder'))
 
 function WorkspaceLoading() {
   return (
@@ -69,10 +70,21 @@ export default function AppWorkspaceRouter({
       <MultiplayerLobby
         session={session}
         onBackToMenu={() => setWorkspaceTarget(null)}
+        onOpenDeckBuilder={() => setWorkspaceTarget('multiplayer-deck-builder')}
         onOpenMatch={(matchId) => {
           setActiveMultiplayerMatchId(matchId)
           setWorkspaceTarget('multiplayer-match')
         }}
+        onLogout={onLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'multiplayer-deck-builder') {
+    return withSuspense(
+      <MultiplayerDeckBuilder
+        session={session}
+        onBackToLobby={() => setWorkspaceTarget('multiplayer')}
         onLogout={onLogout}
       />
     )

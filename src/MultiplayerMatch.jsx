@@ -15,6 +15,7 @@ import {
   resolveMatchDeconstructionAttempt,
 } from './data/multiplayerLobbyRepo'
 import { listProfileUsernamesByIds } from './data/profilesRepo'
+import { DEFAULT_ART_DATA_URL } from './lib/cardWorkspace'
 import { supabase } from './lib/supabase'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
@@ -72,6 +73,10 @@ function deriveConstructState(construct) {
 
 function renderRichContent(value) {
   return renderMathInHtml(normalizeMathHtmlInput(value || ''))
+}
+
+function getConstructImageUrl(construct) {
+  return String(construct?.image_url || '').trim() || DEFAULT_ART_DATA_URL
 }
 
 function normalize(value) {
@@ -312,6 +317,20 @@ function DetailsModal({ detailCard, onClose }) {
           <div className="mp-details-item"><strong>State:</strong> {detailCard.state}</div>
           <div className="mp-details-item"><strong>Owner:</strong> {detailCard.ownerName}</div>
         </div>
+        <div className="mp-details-section">
+          <div className="mp-details-section-title">Construct Image</div>
+          <div className="mp-construct-art-frame is-detail">
+            <img
+              className="mp-construct-art"
+              src={detailCard.imageUrl || DEFAULT_ART_DATA_URL}
+              alt={detailCard.title}
+              onError={(event) => {
+                event.currentTarget.onerror = null
+                event.currentTarget.src = DEFAULT_ART_DATA_URL
+              }}
+            />
+          </div>
+        </div>
         {detailCard.descriptionHtml && (
           <div className="mp-details-section">
             <div className="mp-details-section-title">Construct Description</div>
@@ -378,6 +397,17 @@ function ConstructCard({
         <span className="mp-slot-index">Slot {construct.slot_index}</span>
         <span className={`mp-state-pill is-${state}`}>{stateLabel}</span>
       </div>
+      <div className="mp-construct-art-frame">
+        <img
+          className="mp-construct-art"
+          src={getConstructImageUrl(construct)}
+          alt={construct.title || 'Construct'}
+          onError={(event) => {
+            event.currentTarget.onerror = null
+            event.currentTarget.src = DEFAULT_ART_DATA_URL
+          }}
+        />
+      </div>
       <div className="mp-slot-title">{construct.title}</div>
       <div className="mp-slot-combat-stats">ATK {construct.attack ?? 0} | ARM {construct.armor ?? 0}</div>
       <div className="mp-slot-stats">Cost {construct.ingenuity_cost ?? 0} | Steps {construct.stability_remaining} / {construct.stability_total}</div>
@@ -413,6 +443,17 @@ function HandCard({ card, construct, canPlay, openSlots, onPlay, onShowDetails }
     <div className="mp-hand-card is-construct">
       <div>
         <div className="mp-hand-card-type">Construct</div>
+        <div className="mp-construct-art-frame is-hand">
+          <img
+            className="mp-construct-art"
+            src={getConstructImageUrl(construct)}
+            alt={construct?.title || 'Construct'}
+            onError={(event) => {
+              event.currentTarget.onerror = null
+              event.currentTarget.src = DEFAULT_ART_DATA_URL
+            }}
+          />
+        </div>
         <div className="mp-hand-card-title">{construct?.title || 'Construct'}</div>
         <div className="mp-hand-combat-stats">ATK {construct?.attack ?? 0} | ARM {construct?.armor ?? 0}</div>
         <div className="mp-hand-card-copy">Cost {construct?.ingenuity_cost ?? 0}</div>
@@ -678,6 +719,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
     setDetailCard({
       kind: 'construct',
       title: construct.title || 'Construct',
+      imageUrl: getConstructImageUrl(construct),
       attack: construct.attack ?? 0,
       armor: construct.armor ?? 0,
       ingenuityCost: construct.ingenuity_cost ?? 0,
