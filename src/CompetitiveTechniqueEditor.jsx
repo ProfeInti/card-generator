@@ -286,14 +286,18 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
         fileSeen.add(importKey)
 
         const existing = existingByKey.get(importKey)
-        if (existing) {
-          const row = await updateOwnCompetitiveTechniqueProposal(existing.id, session.userId, payload)
-          existingByKey.set(importKey, row)
-          updatedCount += 1
-        } else {
-          const row = await createCompetitiveTechniqueProposal(payload)
-          existingByKey.set(importKey, row)
-          createdCount += 1
+        try {
+          if (existing) {
+            const row = await updateOwnCompetitiveTechniqueProposal(existing.id, session.userId, payload)
+            existingByKey.set(importKey, row)
+            updatedCount += 1
+          } else {
+            const row = await createCompetitiveTechniqueProposal(payload)
+            existingByKey.set(importKey, row)
+            createdCount += 1
+          }
+        } catch {
+          skippedCount += 1
         }
       }
 

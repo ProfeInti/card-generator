@@ -48,9 +48,9 @@ export function normalizeCompetitiveRichField(value) {
 export function buildTechniquesTemplateJson() {
   return {
     format: INTICORE_FORMAT,
-    entity: 'competitive_techniques',
+    entity: 'competitive_technique_proposals',
     version: 1,
-    notes: 'Fields with equations accept HTML from editor or plain text with inline latex between $...$. French translation fields are optional.',
+    notes: 'Imported into competitive_technique_proposals. Spanish name and effectDescription are required. status must be one of draft, proposed, approved or rejected. Topic, subtopic, effectType, workedExample, and all French translation fields are optional. Fields with equations accept editor HTML or plain text with inline latex between $...$.',
     techniques: [
       {
         name: 'Completing the square',
