@@ -6,13 +6,13 @@ const ROOM_SELECT_FIELDS =
 const ROOM_PLAYER_SELECT_FIELDS = 'id, room_id, user_id, joined_at, is_ready, ready_at'
 
 const MATCH_SELECT_FIELDS =
-  'id, room_id, status, player1_id, player2_id, current_turn_user_id, turn_deadline_at, turn_seconds, winner_user_id, turn_number, started_at, finished_at, turn_started_at, created_at, updated_at'
+  'id, room_id, status, setup_phase, player1_id, player2_id, current_turn_user_id, turn_deadline_at, turn_seconds, winner_user_id, turn_number, started_at, finished_at, turn_started_at, last_resolution_kind, last_resolution_title, last_resolution_summary, last_resolution_step_label, last_resolution_effect, last_resolution_actor_id, last_resolution_created_at, created_at, updated_at'
 
 const MATCH_PLAYER_SELECT_FIELDS =
-  'id, match_id, user_id, life_total, ingenuity_current, ingenuity_max, cards_in_deck, cards_in_hand, cards_in_discard, fatigue_count, created_at, updated_at'
+  'id, match_id, user_id, life_total, ingenuity_current, ingenuity_max, cards_in_deck, cards_in_hand, cards_in_discard, fatigue_count, turns_started, has_completed_mulligan, mulligan_completed_at, created_at, updated_at'
 
 const MATCH_CARD_SELECT_FIELDS =
-  'id, match_id, owner_user_id, source_type, source_construct_id, source_technique_id, technique_name, technique_topic, technique_subtopic, technique_effect_type, technique_effect_description, technique_worked_example, zone, position_index, linked_match_construct_id, granted_by_opponent, created_at'
+  'id, match_id, owner_user_id, source_type, art_url, source_construct_id, source_technique_id, technique_name, technique_topic, technique_subtopic, technique_effect_type, technique_effect_description, technique_worked_example, zone, position_index, linked_match_construct_id, granted_by_opponent, created_at'
 
 const MATCH_CONSTRUCT_SELECT_FIELDS =
   'id, match_id, owner_user_id, source_construct_id, source_exercise_id, title, description, image_url, attack, armor, ingenuity_cost, effects, exercise_statement, exercise_final_answer, selected_solution_path, stability_total, stability_remaining, slot_index, state, has_attacked_this_turn, summoned_turn_number, deconstruction_locked_until_turn, stunned_until_turn, destroyed_at, created_at'
@@ -246,7 +246,7 @@ export async function setMultiplayerRoomReady(roomId, isReady) {
   return row || null
 }
 
-export async function startMatchForRoom(roomId, turnSeconds = 75) {
+export async function startMatchForRoom(roomId, turnSeconds = 120) {
   const { data, error } = await supabase.rpc('mp_start_match', {
     p_room_id: roomId,
     p_turn_seconds: turnSeconds,
@@ -292,6 +292,17 @@ export async function attackMatchPlayer(matchId, attackerConstructId) {
   return row || null
 }
 
+export async function playMatchSpellCard(matchId, cardId) {
+  const { data, error } = await supabase.rpc('mp_play_spell_card', {
+    p_match_id: matchId,
+    p_card_id: cardId,
+  })
+
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  return row || null
+}
+
 export async function resolveMatchDeconstructionAttempt(matchId, targetConstructId, techniqueIds) {
   const { data, error } = await supabase.rpc('mp_resolve_deconstruction_attempt', {
     p_match_id: matchId,
@@ -307,6 +318,27 @@ export async function resolveMatchDeconstructionAttempt(matchId, targetConstruct
 export async function endMultiplayerTurn(matchId) {
   const { data, error } = await supabase.rpc('mp_end_turn', {
     p_match_id: matchId,
+  })
+
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  return row || null
+}
+
+export async function surrenderMultiplayerMatch(matchId) {
+  const { data, error } = await supabase.rpc('mp_surrender_match', {
+    p_match_id: matchId,
+  })
+
+  if (error) throw error
+  const row = Array.isArray(data) ? data[0] : data
+  return row || null
+}
+
+export async function submitMatchMulligan(matchId, cardIds) {
+  const { data, error } = await supabase.rpc('mp_submit_mulligan', {
+    p_match_id: matchId,
+    p_card_ids: Array.isArray(cardIds) ? cardIds : [],
   })
 
   if (error) throw error

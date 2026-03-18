@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase'
 
 const CONSTRUCT_SELECT_FIELDS =
-  'id, created_by, exercise_id, title, description, image_url, attack, armor, ingenuity_cost, effects, status, created_at, updated_at, reviewed_by, approved_at'
+  'id, created_by, exercise_id, title, description, image_url, attack, armor, ingenuity_cost, effect_strength, effects, status, created_at, updated_at, reviewed_by, approved_at'
 
 const CONSTRUCT_STEP_SELECT_FIELDS =
   'id, construct_id, solution_path, step_order, technique_id, progress_state, explanation, created_at'

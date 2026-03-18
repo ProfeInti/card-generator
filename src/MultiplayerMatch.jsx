@@ -11,13 +11,18 @@ import {
   listMatchStepsByConstructIds,
   listRoomPlayersByRoomIds,
   listTechniqueCardDetailsByIds,
+  playMatchSpellCard,
   playConstructFromHand,
   resolveMatchDeconstructionAttempt,
+  submitMatchMulligan,
+  surrenderMultiplayerMatch,
 } from './data/multiplayerLobbyRepo'
 import { listProfileUsernamesByIds } from './data/profilesRepo'
 import { DEFAULT_ART_DATA_URL } from './lib/cardWorkspace'
 import { supabase } from './lib/supabase'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
+
+const BOARD_SLOT_COUNT = 5
 
 function formatDate(value) {
   if (!value) return ''
@@ -51,16 +56,16 @@ function buildBoardSlots(boardCards, constructsById) {
   const bySlot = new Map(
     (boardCards || []).map((card) => [Number(card.position_index), constructsById[card.linked_match_construct_id] || { isUnknownOccupant: true, slot_index: Number(card.position_index) }])
   )
-  return [1, 2, 3].map((slot) => bySlot.get(slot) || null)
+  return Array.from({ length: BOARD_SLOT_COUNT }, (_, index) => index + 1).map((slot) => bySlot.get(slot) || null)
 }
 
 function getOpenSlotsFromBoardCards(boardCards) {
   const occupiedSlots = new Set(
     (boardCards || [])
       .map((card) => Number(card.position_index))
-      .filter((slot) => Number.isInteger(slot) && slot >= 1 && slot <= 3)
+      .filter((slot) => Number.isInteger(slot) && slot >= 1 && slot <= BOARD_SLOT_COUNT)
   )
-  return [1, 2, 3].filter((slot) => !occupiedSlots.has(slot))
+  return Array.from({ length: BOARD_SLOT_COUNT }, (_, index) => index + 1).filter((slot) => !occupiedSlots.has(slot))
 }
 
 function deriveConstructState(construct) {
@@ -77,6 +82,11 @@ function renderRichContent(value) {
 
 function getConstructImageUrl(construct) {
   return String(construct?.image_url || '').trim() || DEFAULT_ART_DATA_URL
+}
+
+function getCardImageUrl(card, construct) {
+  if (card?.source_type === 'spell') return String(card?.art_url || '').trim() || DEFAULT_ART_DATA_URL
+  return getConstructImageUrl(construct)
 }
 
 function normalize(value) {
@@ -107,17 +117,38 @@ function canDeconstructConstruct(construct, matchTurnNumber, isOwnTurn) {
   return true
 }
 
+function getConstructStatusLabel(construct, matchTurnNumber) {
+  if (!construct || construct.isUnknownOccupant) return ''
+  if (deriveConstructState(construct) === 'destroyed') return 'Destroyed'
+  if (Number(construct?.stunned_until_turn ?? 0) >= Number(matchTurnNumber ?? 1)) return 'Stunned'
+  if (Number(construct?.summoned_turn_number ?? 0) >= Number(matchTurnNumber ?? 1)) return 'Summoning'
+  if (Number(construct?.deconstruction_locked_until_turn ?? 0) >= Number(matchTurnNumber ?? 1)) return 'Shielded'
+  if (deriveConstructState(construct) === 'vulnerable') return 'Vulnerable'
+  return 'Protected'
+}
+
 function formatPathLabel(path) {
   return String(path || 'main').trim().toLowerCase().replace(/[-_]+/g, ' ')
 }
 
 function buildDeconstructionTechniqueOptions(steps, techniquesById) {
-  return (steps || []).map((step, index) => {
+  const optionsByTechniqueId = new Map()
+
+  ;(steps || []).forEach((step, index) => {
     const technique = techniquesById[step.technique_id] || {}
-    return {
+    const techniqueId = step.technique_id
+    if (!techniqueId) return
+
+    const existingOption = optionsByTechniqueId.get(techniqueId)
+    if (existingOption) {
+      existingOption.orders.push(index + 1)
+      return
+    }
+
+    optionsByTechniqueId.set(techniqueId, {
       stepId: step.id,
-      techniqueId: step.technique_id,
-      order: index + 1,
+      techniqueId,
+      orders: [index + 1],
       name: technique.name || `Technique ${index + 1}`,
       topic: technique.topic || '',
       subtopic: technique.subtopic || '',
@@ -125,8 +156,10 @@ function buildDeconstructionTechniqueOptions(steps, techniquesById) {
       effectDescription: technique.effect_description || '',
       workedExample: technique.worked_example || '',
       progressState: step.progress_state || '',
-    }
+    })
   })
+
+  return [...optionsByTechniqueId.values()]
 }
 
 function shuffleArray(items) {
@@ -138,15 +171,6 @@ function shuffleArray(items) {
     next[swapIndex] = temp
   }
   return next
-}
-
-function getConstructStatusNote(construct, matchTurnNumber) {
-  if (!construct || construct.isUnknownOccupant) return ''
-  if (deriveConstructState(construct) === 'destroyed') return 'Destroyed'
-  if (Number(construct?.summoned_turn_number ?? 0) >= Number(matchTurnNumber ?? 1)) return 'Summoned this turn'
-  if (Number(construct?.stunned_until_turn ?? 0) >= Number(matchTurnNumber ?? 1)) return 'Stunned'
-  if (Number(construct?.deconstruction_locked_until_turn ?? 0) >= Number(matchTurnNumber ?? 1)) return 'Deconstruction locked this turn'
-  return ''
 }
 
 function PlayerHeader({ label, username, isCurrentTurn, playerState, constructCount }) {
@@ -191,7 +215,7 @@ function DeconstructionModal({
 
   return (
     <div className="mp-details-backdrop" onClick={onClose}>
-      <div className="mp-details-modal" onClick={(event) => event.stopPropagation()}>
+      <div className="mp-details-modal is-wide" onClick={(event) => event.stopPropagation()}>
         <div className="mp-details-header">
           <div>
             <div className="mp-details-kicker">Deconstruction</div>
@@ -243,7 +267,7 @@ function DeconstructionModal({
                       disabled={saving || !currentStep}
                     >
                       <div className="training-tech-name">{option.name}</div>
-                      <div className="training-tech-meta">Step template: {option.order}</div>
+                      <div className="training-tech-meta">Used in step{option.orders.length === 1 ? '' : 's'}: {option.orders.join(', ')}</div>
                       <div className="training-tech-meta">{option.topic || 'N/A'} / {option.subtopic || 'N/A'}</div>
                       <div className="training-tech-meta">Effect: {option.effectType || 'N/A'}</div>
                       <div className="training-tech-effect" dangerouslySetInnerHTML={{ __html: renderedEffect }} />
@@ -265,16 +289,51 @@ function DeconstructionModal({
   )
 }
 
+function SharedResolutionModal({ resolution, onClose }) {
+  if (!resolution) return null
+
+  return (
+    <div className="mp-details-backdrop" onClick={onClose}>
+      <div className="mp-details-modal is-wide" onClick={(event) => event.stopPropagation()}>
+        <div className="mp-details-header">
+          <div>
+            <div className="mp-details-kicker">Battle Update</div>
+            <div className="mp-details-title">{resolution.title}</div>
+          </div>
+          <button type="button" className="btn" onClick={onClose}>Close</button>
+        </div>
+        <div className="mp-details-grid">
+          <div className="mp-details-item"><strong>Actor:</strong> {resolution.actorName}</div>
+          <div className="mp-details-item"><strong>Resolved:</strong> {formatDate(resolution.createdAt)}</div>
+          <div className="mp-details-item"><strong>Step:</strong> {resolution.stepLabel || 'N/A'}</div>
+        </div>
+        {resolution.summary && (
+          <div className="mp-details-section">
+            <div className="mp-details-section-title">Summary</div>
+            <div className="mp-details-body">{resolution.summary}</div>
+          </div>
+        )}
+        {resolution.effect && (
+          <div className="mp-details-section">
+            <div className="mp-details-section-title">Effects</div>
+            <div className="mp-details-body">{resolution.effect}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function DetailsModal({ detailCard, onClose }) {
   if (!detailCard) return null
 
-  if (detailCard.kind === 'technique') {
+  if (detailCard.kind === 'technique' || detailCard.kind === 'spell') {
     return (
       <div className="mp-details-backdrop" onClick={onClose}>
         <div className="mp-details-modal" onClick={(event) => event.stopPropagation()}>
           <div className="mp-details-header">
             <div>
-              <div className="mp-details-kicker">Technique</div>
+              <div className="mp-details-kicker">{detailCard.kind === 'spell' ? 'Spell' : 'Technique'}</div>
               <div className="mp-details-title">{detailCard.title}</div>
             </div>
             <button type="button" className="btn" onClick={onClose}>Close</button>
@@ -360,12 +419,64 @@ function DetailsModal({ detailCard, onClose }) {
   )
 }
 
+function ActionMenu({ isOpen, onToggle, onClose, items, align = 'right' }) {
+  const closeTimeoutRef = useRef(null)
+
+  useEffect(() => () => {
+    if (closeTimeoutRef.current) {
+      window.clearTimeout(closeTimeoutRef.current)
+    }
+  }, [])
+
+  const cancelScheduledClose = () => {
+    if (closeTimeoutRef.current) {
+      window.clearTimeout(closeTimeoutRef.current)
+      closeTimeoutRef.current = null
+    }
+  }
+
+  const scheduleClose = () => {
+    cancelScheduledClose()
+    closeTimeoutRef.current = window.setTimeout(() => {
+      onClose?.()
+      closeTimeoutRef.current = null
+    }, 1800)
+  }
+
+  return (
+    <div
+      className="mp-action-menu"
+      onMouseEnter={cancelScheduledClose}
+      onMouseLeave={() => isOpen && scheduleClose()}
+    >
+      <button type="button" className="mp-action-trigger" onClick={onToggle} aria-expanded={isOpen} aria-label="Open actions menu">
+        ...
+      </button>
+      {isOpen && (
+        <div className={`mp-action-popover is-${align}`}>
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className="mp-action-item"
+              onClick={item.onClick}
+              disabled={item.disabled}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ConstructCard({
   construct,
-  ownerName,
-  onShowDetails,
-  actionButton,
-  statusNote,
+  matchTurnNumber,
+  menuOpen,
+  onToggleMenu,
+  menuItems,
 }) {
   if (!construct) {
     return (
@@ -388,16 +499,13 @@ function ConstructCard({
     )
   }
 
-  const state = deriveConstructState(construct)
-  const stateLabel = state.charAt(0).toUpperCase() + state.slice(1)
-
   return (
-    <div className={`mp-slot-card is-${state}`}>
+      <div className={`mp-slot-card is-${deriveConstructState(construct)}`}>
       <div className="mp-slot-topline">
         <span className="mp-slot-index">Slot {construct.slot_index}</span>
-        <span className={`mp-state-pill is-${state}`}>{stateLabel}</span>
+        <ActionMenu isOpen={menuOpen} onToggle={onToggleMenu} onClose={onToggleMenu} items={menuItems} />
       </div>
-      <div className="mp-construct-art-frame">
+      <div className="mp-construct-art-frame is-compact">
         <img
           className="mp-construct-art"
           src={getConstructImageUrl(construct)}
@@ -408,16 +516,9 @@ function ConstructCard({
           }}
         />
       </div>
-      <div className="mp-slot-title">{construct.title}</div>
+      <div className={`mp-state-pill is-${deriveConstructState(construct)}`}>{getConstructStatusLabel(construct, matchTurnNumber)}</div>
       <div className="mp-slot-combat-stats">ATK {construct.attack ?? 0} | ARM {construct.armor ?? 0}</div>
-      <div className="mp-slot-stats">Cost {construct.ingenuity_cost ?? 0} | Steps {construct.stability_remaining} / {construct.stability_total}</div>
-      {statusNote && <div className="mp-slot-stats">{statusNote}</div>}
-      <div className="mp-slot-actions">
-        <button type="button" className="btn" onClick={() => onShowDetails(construct, ownerName)}>
-          More Details
-        </button>
-        {actionButton}
-      </div>
+      <div className="mp-slot-cost">Cost {construct.ingenuity_cost ?? 0}</div>
     </div>
   )
 }
@@ -432,53 +533,145 @@ function SideZone({ title, count, hint }) {
   )
 }
 
-function HandCard({ card, construct, canPlay, openSlots, onPlay, onShowDetails }) {
-  if (card.source_type === 'technique') {
-    return null
-  }
-
-  const slotOptions = [1, 2, 3]
+function HandCard({ card, construct, canPlay, openSlots, onPlay, onShowDetails, menuOpen, onToggleMenu }) {
+  const slotOptions = Array.from({ length: BOARD_SLOT_COUNT }, (_, index) => index + 1)
+  const isSpell = card.source_type === 'spell'
+  const menuItems = isSpell
+    ? [
+      {
+        label: 'View Details',
+        onClick: () => {
+          onShowDetails(card, construct)
+          onToggleMenu()
+        },
+        disabled: false,
+      },
+      {
+        label: 'Use Chispa',
+        onClick: () => {
+          onPlay(card.id, null)
+          onToggleMenu()
+        },
+        disabled: !canPlay,
+      },
+    ]
+    : [
+      {
+        label: 'View Details',
+        onClick: () => {
+          onShowDetails(card, construct)
+          onToggleMenu()
+        },
+        disabled: false,
+      },
+      ...slotOptions.map((slot) => ({
+        label: openSlots.includes(slot) ? `Summon to Slot ${slot}` : `Slot ${slot} Occupied`,
+        onClick: () => {
+          onPlay(card.id, slot)
+          onToggleMenu()
+        },
+        disabled: !canPlay || !openSlots.includes(slot),
+      })),
+    ]
 
   return (
-    <div className="mp-hand-card is-construct">
+    <div className={`mp-hand-card ${isSpell ? 'is-technique' : 'is-construct'}`}>
+      <div className="mp-hand-card-topline">
+        <div className="mp-hand-card-type">{isSpell ? 'Spell' : 'Construct'}</div>
+        <ActionMenu isOpen={menuOpen} onToggle={onToggleMenu} onClose={onToggleMenu} items={menuItems} />
+      </div>
       <div>
-        <div className="mp-hand-card-type">Construct</div>
-        <div className="mp-construct-art-frame is-hand">
+        <div className="mp-construct-art-frame is-hand is-compact">
           <img
             className="mp-construct-art"
-            src={getConstructImageUrl(construct)}
-            alt={construct?.title || 'Construct'}
+            src={getCardImageUrl(card, construct)}
+            alt={construct?.title || card?.technique_name || 'Card'}
             onError={(event) => {
               event.currentTarget.onerror = null
               event.currentTarget.src = DEFAULT_ART_DATA_URL
             }}
           />
         </div>
-        <div className="mp-hand-card-title">{construct?.title || 'Construct'}</div>
-        <div className="mp-hand-combat-stats">ATK {construct?.attack ?? 0} | ARM {construct?.armor ?? 0}</div>
-        <div className="mp-hand-card-copy">Cost {construct?.ingenuity_cost ?? 0}</div>
+        {isSpell ? (
+          <>
+            <div className="mp-hand-combat-stats">{card?.technique_name || 'Chispa de Ingenio'}</div>
+            <div className="mp-slot-cost">+1 Ingenuity this turn</div>
+          </>
+        ) : (
+          <>
+            <div className="mp-hand-combat-stats">ATK {construct?.attack ?? 0} | ARM {construct?.armor ?? 0}</div>
+            <div className="mp-slot-cost">Cost {construct?.ingenuity_cost ?? 0}</div>
+          </>
+        )}
       </div>
-      <div className="mp-hand-card-actions">
-        <button type="button" className="btn" onClick={() => onShowDetails(card, construct)}>
-          More Details
-        </button>
+    </div>
+  )
+}
+
+function MulliganPanel({
+  ownHandCards,
+  constructsById,
+  selectedCardIds,
+  onToggleCard,
+  onSubmit,
+  saving,
+  ownCompleted,
+  enemyCompleted,
+  enemyName,
+  expectedOpeningCount,
+}) {
+  const constructCards = ownHandCards.filter((card) => card?.source_type === 'construct')
+
+  return (
+    <div className="panel mp-mulligan-panel">
+      <div className="saved-title">Opening Mulligan</div>
+      <div className="saved-empty">
+        Choose any opening constructs to replace. When both players finish mulligan, turn 1 begins.
       </div>
-      <div className="mp-hand-slot-actions">
-        {slotOptions.map((slot) => {
-          const isOpen = openSlots.includes(slot)
+      <div className="saved-empty">
+        Your mulligan hand: {expectedOpeningCount} construct{expectedOpeningCount === 1 ? '' : 's'}.
+      </div>
+      <div className="saved-empty">
+        You: {ownCompleted ? 'Ready' : 'Choosing'} | {enemyName || 'Opponent'}: {enemyCompleted ? 'Ready' : 'Choosing'}
+      </div>
+      <div className="mp-mulligan-row">
+        {constructCards.map((card) => {
+          const construct = constructsById[card.linked_match_construct_id] || null
+          const isSelected = selectedCardIds.includes(card.id)
+
           return (
             <button
-              key={slot}
+              key={card.id}
               type="button"
-              className="btn"
-              disabled={!canPlay || !isOpen}
-              onClick={() => onPlay(card.id, slot)}
-              title={isOpen ? 'Play this construct into slot ' + slot : 'Slot ' + slot + ' is occupied'}
+              className={`mp-hand-card is-construct mp-mulligan-card${isSelected ? ' is-selected' : ''}`}
+              onClick={() => onToggleCard(card.id)}
+              disabled={saving || ownCompleted}
             >
-              Slot {slot}
+              <div className="mp-hand-card-type">{isSelected ? 'Replace' : 'Keep'}</div>
+              <div className="mp-construct-art-frame is-hand is-compact">
+                <img
+                  className="mp-construct-art"
+                  src={getConstructImageUrl(construct)}
+                  alt={construct?.title || 'Construct'}
+                  onError={(event) => {
+                    event.currentTarget.onerror = null
+                    event.currentTarget.src = DEFAULT_ART_DATA_URL
+                  }}
+                />
+              </div>
+              <div className="mp-hand-combat-stats">ATK {construct?.attack ?? 0} | ARM {construct?.armor ?? 0}</div>
+              <div className="mp-slot-cost">Cost {construct?.ingenuity_cost ?? 0}</div>
             </button>
           )
         })}
+      </div>
+      <div className="mp-mulligan-actions">
+        <button type="button" className="btn" onClick={() => onSubmit([])} disabled={saving || ownCompleted}>
+          Keep Hand
+        </button>
+        <button type="button" className="btn" onClick={() => onSubmit(selectedCardIds)} disabled={saving || ownCompleted}>
+          {saving ? 'Submitting...' : `Replace Selected (${selectedCardIds.length})`}
+        </button>
       </div>
     </div>
   )
@@ -500,6 +693,8 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
   const [notice, setNotice] = useState('')
   const [countdownLabel, setCountdownLabel] = useState('')
   const [detailCard, setDetailCard] = useState(null)
+  const [openMenuKey, setOpenMenuKey] = useState(null)
+  const [mulliganSelectedCardIds, setMulliganSelectedCardIds] = useState([])
   const [selectedAttackerId, setSelectedAttackerId] = useState(null)
   const [activeDeconstructionTargetId, setActiveDeconstructionTargetId] = useState(null)
   const [deconstructionCurrentStepIndex, setDeconstructionCurrentStepIndex] = useState(0)
@@ -507,6 +702,8 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
   const [deconstructionFeedback, setDeconstructionFeedback] = useState(null)
   const [deconstructionSequence, setDeconstructionSequence] = useState([])
   const [deconstructionShuffledOptions, setDeconstructionShuffledOptions] = useState([])
+  const [sharedResolution, setSharedResolution] = useState(null)
+  const lastSeenResolutionKeyRef = useRef('')
   const autoEndedTurnKeyRef = useRef('')
 
   const loadMatch = useCallback(async ({ silent = false } = {}) => {
@@ -664,8 +861,9 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
   const ownBoardCards = ownCards.filter((card) => card.zone === 'board' && card.source_type === 'construct')
   const enemyBoardCards = enemyCards.filter((card) => card.zone === 'board' && card.source_type === 'construct')
   const ownHandCards = ownCards
-    .filter((card) => card.zone === 'hand' && card.source_type === 'construct')
+    .filter((card) => card.zone === 'hand' && (card.source_type === 'construct' || card.source_type === 'spell'))
     .sort((a, b) => (a.position_index ?? 999) - (b.position_index ?? 999))
+  const ownMulliganCards = ownHandCards.filter((card) => card.source_type === 'construct')
   const hiddenLegacyTechniqueCards = ownCards.filter((card) => card.zone === 'hand' && card.source_type === 'technique').length
 
   const ownBoard = useMemo(() => buildBoardSlots(ownBoardCards, constructsById), [ownBoardCards, constructsById])
@@ -673,6 +871,8 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
   const openOwnSlots = useMemo(() => getOpenSlotsFromBoardCards(ownBoardCards), [ownBoardCards])
   const isOwnTurn = match?.current_turn_user_id === ownPlayerId
   const isMatchActive = match?.status === 'active'
+  const isInMulligan = match?.setup_phase === 'mulligan'
+  const isBattlePhase = isMatchActive && !isInMulligan
   const currentTurnKey = `${match?.id || 'no-match'}:${match?.turn_number || 0}:${match?.current_turn_user_id || 'no-player'}:${match?.turn_deadline_at || 'no-deadline'}`
   const selectedAttacker = selectedAttackerId ? constructsById[selectedAttackerId] || null : null
   const activeDeconstructionTarget = activeDeconstructionTargetId ? constructsById[activeDeconstructionTargetId] || null : null
@@ -687,12 +887,17 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
   }, [match?.winner_user_id, ownPlayerId, session.username, usernameById])
   const ownPlayerState = playerStateByUserId[ownPlayerId] || null
   const enemyPlayerState = playerStateByUserId[enemyPlayerId] || null
+  const ownMulliganCompleted = Boolean(ownPlayerState?.has_completed_mulligan)
+  const enemyMulliganCompleted = Boolean(enemyPlayerState?.has_completed_mulligan)
+  const isStartingPlayer = Boolean(ownPlayerId && match?.current_turn_user_id === ownPlayerId)
+  const expectedOpeningCount = isStartingPlayer ? 3 : 4
   const resultSummary = useMemo(() => {
     if (!match || match.status !== 'finished') return ''
     if (match.winner_user_id === ownPlayerId) return 'Victory'
     if (match.winner_user_id) return 'Defeat'
     return 'Match Finished'
   }, [match, ownPlayerId])
+  const resolutionKey = `${match?.last_resolution_created_at || ''}:${match?.last_resolution_kind || ''}:${match?.last_resolution_actor_id || ''}`
 
   useEffect(() => {
     if (!selectedAttackerId) return
@@ -701,6 +906,26 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
       setSelectedAttackerId(null)
     }
   }, [constructsById, isOwnTurn, match?.turn_number, selectedAttackerId])
+
+  useEffect(() => {
+    if (!isInMulligan) {
+      setMulliganSelectedCardIds([])
+    }
+  }, [isInMulligan])
+
+  useEffect(() => {
+    if (!match?.last_resolution_created_at) return
+    if (lastSeenResolutionKeyRef.current === resolutionKey) return
+    lastSeenResolutionKeyRef.current = resolutionKey
+    setSharedResolution({
+      title: match.last_resolution_title || 'Resolution',
+      summary: match.last_resolution_summary || '',
+      stepLabel: match.last_resolution_step_label || '',
+      effect: match.last_resolution_effect || '',
+      actorName: usernameById[match.last_resolution_actor_id] || match.last_resolution_actor_id || 'Unknown',
+      createdAt: match.last_resolution_created_at,
+    })
+  }, [match?.last_resolution_actor_id, match?.last_resolution_created_at, match?.last_resolution_effect, match?.last_resolution_step_label, match?.last_resolution_summary, match?.last_resolution_title, resolutionKey, usernameById])
 
   useEffect(() => {
     if (!activeDeconstructionTarget) return
@@ -734,14 +959,14 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
   }
 
   const openHandDetails = (card, payload) => {
-    if (card.source_type === 'technique') {
+    if (card.source_type === 'technique' || card.source_type === 'spell') {
       setDetailCard({
-        kind: 'technique',
-        title: payload?.name || 'Technique',
-        topic: payload?.topic || 'N/A',
-        subtopic: payload?.subtopic || 'N/A',
-        effectType: payload?.effect_type || 'N/A',
-        effectHtml: renderRichContent(payload?.effect_description || '<p>No effect description.</p>'),
+        kind: card.source_type === 'spell' ? 'spell' : 'technique',
+        title: payload?.name || card?.technique_name || 'Technique',
+        topic: payload?.topic || card?.technique_topic || 'N/A',
+        subtopic: payload?.subtopic || card?.technique_subtopic || 'N/A',
+        effectType: payload?.effect_type || card?.technique_effect_type || 'N/A',
+        effectHtml: renderRichContent(payload?.effect_description || card?.technique_effect_description || '<p>No effect description.</p>'),
         workedExampleHtml: payload?.worked_example ? renderRichContent(payload.worked_example) : '',
       })
       return
@@ -750,14 +975,65 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
     openConstructDetails(payload, session.username)
   }
 
+  const toggleMulliganCard = (cardId) => {
+    setMulliganSelectedCardIds((current) => (
+      current.includes(cardId)
+        ? current.filter((item) => item !== cardId)
+        : [...current, cardId]
+    ))
+  }
+
+  const handleSubmitMulligan = useCallback(async (cardIds) => {
+    if (!matchId || !isInMulligan || saving || ownMulliganCompleted) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+    setOpenMenuKey(null)
+
+    try {
+      const result = await submitMatchMulligan(matchId, cardIds)
+      setMulliganSelectedCardIds([])
+      setNotice(result?.message || 'Mulligan submitted.')
+      await loadMatch()
+    } catch (err) {
+      setError(err?.message || 'Could not submit mulligan.')
+    } finally {
+      setSaving(false)
+    }
+  }, [isInMulligan, loadMatch, matchId, ownMulliganCompleted, saving])
+
+  useEffect(() => {
+    if (!isInMulligan || ownMulliganCompleted || saving) return
+    const deadlineMs = match?.turn_deadline_at ? new Date(match.turn_deadline_at).getTime() : NaN
+    if (!Number.isFinite(deadlineMs)) return
+
+    const autoKeep = () => {
+      if (ownMulliganCompleted) return
+      handleSubmitMulligan([])
+    }
+
+    if (deadlineMs <= Date.now()) {
+      autoKeep()
+      return
+    }
+
+    const timeoutId = window.setTimeout(autoKeep, Math.max(deadlineMs - Date.now(), 0) + 50)
+    return () => window.clearTimeout(timeoutId)
+  }, [handleSubmitMulligan, isInMulligan, match?.turn_deadline_at, ownMulliganCompleted, saving])
+
   const handlePlayConstruct = async (cardId, slotIndex) => {
     setSaving(true)
     setError('')
     setNotice('')
+    setOpenMenuKey(null)
 
     try {
-      const result = await playConstructFromHand(matchId, cardId, slotIndex)
-      setNotice(result?.message || 'Construct played successfully.')
+      const card = ownHandCards.find((item) => item.id === cardId) || null
+      const result = card?.source_type === 'spell'
+        ? await playMatchSpellCard(matchId, cardId)
+        : await playConstructFromHand(matchId, cardId, slotIndex)
+      setNotice(result?.message || (card?.source_type === 'spell' ? 'Spell used successfully.' : 'Construct played successfully.'))
       setSelectedAttackerId(null)
       setActiveDeconstructionTargetId(null)
       setDeconstructionShuffledOptions([])
@@ -771,6 +1047,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
 
   const handleEndTurn = useCallback(async ({ automatic = false } = {}) => {
     setSaving(true)
+    setOpenMenuKey(null)
     setSelectedAttackerId(null)
     setActiveDeconstructionTargetId(null)
     setDeconstructionShuffledOptions([])
@@ -883,11 +1160,12 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
   }
 
   const handleAttackConstruct = async (targetConstructId) => {
-    if (!selectedAttackerId || !targetConstructId) return
+    if (!selectedAttackerId || !targetConstructId || !isBattlePhase) return
 
     setSaving(true)
     setError('')
     setNotice('')
+    setOpenMenuKey(null)
 
     try {
       const result = await attackMatchConstruct(matchId, selectedAttackerId, targetConstructId)
@@ -901,15 +1179,16 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
     }
   }
 
-  const handleAttackPlayer = async () => {
-    if (!selectedAttackerId) return
+  const handleAttackPlayer = async (attackerConstructId = selectedAttackerId) => {
+    if (!attackerConstructId || !isBattlePhase) return
 
     setSaving(true)
     setError('')
     setNotice('')
+    setOpenMenuKey(null)
 
     try {
-      const result = await attackMatchPlayer(matchId, selectedAttackerId)
+      const result = await attackMatchPlayer(matchId, attackerConstructId)
       setNotice(result?.message || 'Direct attack resolved.')
       setSelectedAttackerId(null)
       await loadMatch()
@@ -921,7 +1200,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
   }
 
   useEffect(() => {
-    if (!match?.turn_deadline_at || match?.status !== 'active' || !isOwnTurn || saving || loading) return undefined
+    if (!match?.turn_deadline_at || !isBattlePhase || !isOwnTurn || saving || loading) return undefined
 
     const deadlineMs = new Date(match.turn_deadline_at).getTime()
     if (!Number.isFinite(deadlineMs)) return undefined
@@ -939,7 +1218,28 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
 
     const timeoutId = window.setTimeout(triggerAutoEnd, Math.max(deadlineMs - Date.now(), 0) + 50)
     return () => window.clearTimeout(timeoutId)
-  }, [currentTurnKey, handleEndTurn, isOwnTurn, loading, match?.status, match?.turn_deadline_at, saving])
+  }, [currentTurnKey, handleEndTurn, isBattlePhase, isOwnTurn, loading, match?.turn_deadline_at, saving])
+
+  const handleSurrender = async () => {
+    if (!matchId || !isMatchActive || saving) return
+    if (!window.confirm('Surrender this match? Your opponent will be declared the winner.')) return
+
+    setSaving(true)
+    setError('')
+    setNotice('')
+    setOpenMenuKey(null)
+
+    try {
+      const result = await surrenderMultiplayerMatch(matchId)
+      setNotice(result?.message || 'Match surrendered.')
+      setSelectedAttackerId(null)
+      await loadMatch()
+    } catch (err) {
+      setError(err?.message || 'Could not surrender the match.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="page">
@@ -980,6 +1280,21 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
         </div>
       )}
 
+      {isInMulligan && (
+        <MulliganPanel
+          ownHandCards={ownMulliganCards}
+          constructsById={constructsById}
+          selectedCardIds={mulliganSelectedCardIds}
+          onToggleCard={toggleMulliganCard}
+          onSubmit={handleSubmitMulligan}
+          saving={saving}
+          ownCompleted={ownMulliganCompleted}
+          enemyCompleted={enemyMulliganCompleted}
+          enemyName={usernameById[enemyPlayerId] || 'Opponent'}
+          expectedOpeningCount={expectedOpeningCount}
+        />
+      )}
+
       <div className="mp-battlefield-shell">
         <aside className="mp-side-column">
           <div className="panel">
@@ -988,6 +1303,27 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
             <SideZone title="Enemy Discard" count={enemyPlayerState?.cards_in_discard ?? 0} hint="Used and destroyed enemy cards." />
             <SideZone title="Enemy Fatigue" count={enemyPlayerState?.fatigue_count ?? 0} hint="Damage that increases when the enemy tries to draw from an empty deck." />
           </div>
+          <section className="mp-center-strip">
+            <div className="mp-match-hud">
+              <div className="mp-match-chip">Room: {room?.name || 'Unknown room'}</div>
+              <div className="mp-match-chip">Status: {match?.status || 'Loading'}</div>
+              <div className="mp-match-chip">Turn: {usernameById[match?.current_turn_user_id] || match?.current_turn_user_id || 'N/A'}</div>
+              <div className="mp-match-chip">Turn No: {match?.turn_number ?? 1}</div>
+              <div className="mp-match-chip">Countdown: {isMatchActive ? countdownLabel : 'Match finished'}</div>
+              <div className="mp-match-chip">Turn Length: {match?.turn_seconds ?? 75}s</div>
+              <div className="mp-match-chip">Players in room: {roomPlayers.length}</div>
+              {match?.winner_user_id && <div className="mp-match-chip">Winner: {winnerName || 'Unknown'}</div>}
+            </div>
+            <div className="mp-center-note">
+              {isInMulligan
+                ? 'Choose the opening constructs you want to replace. The duel begins after both players finish mulligan.'
+                : isMatchActive
+                ? 'Break armor first, then deconstruct vulnerable constructs before they recover.'
+                : 'The match is complete. You can review the final battlefield state or return to the lobby.'}
+            </div>
+            {match?.created_at && <div className="saved-empty">Created: {formatDate(match.created_at)}</div>}
+            {match?.turn_deadline_at && <div className="saved-empty">Deadline: {formatDate(match.turn_deadline_at)}</div>}
+          </section>
         </aside>
 
         <main className="mp-board-main">
@@ -1004,81 +1340,35 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
                 <ConstructCard
                   key={construct?.id || `enemy-slot-${index + 1}`}
                   construct={construct}
-                  ownerName={usernameById[enemyPlayerId] || 'Opponent'}
-                  onShowDetails={openConstructDetails}
-                  actionButton={
-                    construct && !construct.isUnknownOccupant && deriveConstructState(construct) !== 'destroyed' ? (
-                      <>
-                        {selectedAttacker && (
-                          <button
-                            type="button"
-                            className="btn"
-                            disabled={saving || loading || !isOwnTurn || !isMatchActive}
-                            onClick={() => handleAttackConstruct(construct.id)}
-                          >
-                            Attack
-                          </button>
-                        )}
-                        {canDeconstructConstruct(construct, match?.turn_number, isOwnTurn) && (
-                          <button
-                            type="button"
-                            className="btn"
-                            disabled={saving || loading || !isMatchActive}
-                            onClick={() => openDeconstructionModal(construct)}
-                          >
-                            Deconstruct
-                          </button>
-                        )}
-                      </>
-                    ) : null
-                  }
-                  statusNote={getConstructStatusNote(construct, match?.turn_number)}
+                  matchTurnNumber={match?.turn_number}
+                  menuOpen={openMenuKey === `enemy-${construct?.id || index}`}
+                  onToggleMenu={() => setOpenMenuKey((current) => (current === `enemy-${construct?.id || index}` ? null : `enemy-${construct?.id || index}`))}
+                  menuItems={[
+                    {
+                      label: 'View Details',
+                      onClick: () => {
+                        openConstructDetails(construct, usernameById[enemyPlayerId] || 'Opponent')
+                        setOpenMenuKey(null)
+                      },
+                      disabled: !construct || construct.isUnknownOccupant,
+                    },
+                    {
+                      label: 'Attack',
+                      onClick: () => handleAttackConstruct(construct.id),
+                      disabled: !construct || construct.isUnknownOccupant || !selectedAttacker || saving || loading || !isOwnTurn || !isBattlePhase || deriveConstructState(construct) === 'destroyed',
+                    },
+                    {
+                      label: 'Deconstruct',
+                      onClick: () => {
+                        openDeconstructionModal(construct)
+                        setOpenMenuKey(null)
+                      },
+                      disabled: !construct || construct.isUnknownOccupant || !canDeconstructConstruct(construct, match?.turn_number, isOwnTurn) || saving || loading || !isBattlePhase,
+                    },
+                  ]}
                 />
               ))}
             </div>
-          </section>
-
-          <section className="mp-center-strip">
-            <div className="mp-match-hud">
-              <div className="mp-match-chip">Room: {room?.name || 'Unknown room'}</div>
-              <div className="mp-match-chip">Status: {match?.status || 'Loading'}</div>
-              <div className="mp-match-chip">Turn: {usernameById[match?.current_turn_user_id] || match?.current_turn_user_id || 'N/A'}</div>
-              <div className="mp-match-chip">Turn No: {match?.turn_number ?? 1}</div>
-              <div className="mp-match-chip">Countdown: {isMatchActive ? countdownLabel : 'Match finished'}</div>
-              <div className="mp-match-chip">Turn Length: {match?.turn_seconds ?? 75}s</div>
-              <div className="mp-match-chip">Players in room: {roomPlayers.length}</div>
-              {match?.winner_user_id && <div className="mp-match-chip">Winner: {winnerName || 'Unknown'}</div>}
-            </div>
-            <div className="mp-center-note">
-              {isMatchActive
-                ? 'Break armor first, then deconstruct vulnerable constructs before they recover.'
-                : 'The match is complete. You can review the final battlefield state or return to the lobby.'}
-            </div>
-            <div className="mp-center-actions">
-              <button
-                type="button"
-                className="btn"
-                onClick={handleAttackPlayer}
-                disabled={!selectedAttacker || saving || loading || !isOwnTurn || !isMatchActive}
-              >
-                {selectedAttacker ? `Attack Opponent with ${selectedAttacker.title || 'Construct'}` : 'Select an attacker first'}
-              </button>
-              {selectedAttacker && (
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setSelectedAttackerId(null)}
-                  disabled={saving}
-                >
-                  Cancel Attack
-                </button>
-              )}
-              <button type="button" className="btn" onClick={() => handleEndTurn()} disabled={!isOwnTurn || saving || loading || !isMatchActive}>
-                {saving && isOwnTurn ? 'Processing...' : 'End Turn'}
-              </button>
-            </div>
-            {match?.created_at && <div className="saved-empty">Created: {formatDate(match.created_at)}</div>}
-            {match?.turn_deadline_at && <div className="saved-empty">Deadline: {formatDate(match.turn_deadline_at)}</div>}
           </section>
 
           <section className="mp-board-panel is-self">
@@ -1094,27 +1384,41 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
                 <ConstructCard
                   key={construct?.id || `self-slot-${index + 1}`}
                   construct={construct}
-                  ownerName={session.username}
-                  onShowDetails={openConstructDetails}
-                  actionButton={
-                    construct && !construct.isUnknownOccupant ? (
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={!canConstructAttackThisTurn(construct, match?.turn_number, isOwnTurn) || saving || loading || !isMatchActive}
-                        onClick={() => setSelectedAttackerId((current) => (current === construct.id ? null : construct.id))}
-                      >
-                        {selectedAttackerId === construct.id ? 'Attacker Selected' : 'Select Attacker'}
-                      </button>
-                    ) : null
-                  }
-                  statusNote={getConstructStatusNote(construct, match?.turn_number)}
+                  matchTurnNumber={match?.turn_number}
+                  menuOpen={openMenuKey === `self-${construct?.id || index}`}
+                  onToggleMenu={() => setOpenMenuKey((current) => (current === `self-${construct?.id || index}` ? null : `self-${construct?.id || index}`))}
+                  menuItems={[
+                    {
+                      label: 'View Details',
+                      onClick: () => {
+                        openConstructDetails(construct, session.username)
+                        setOpenMenuKey(null)
+                      },
+                      disabled: !construct || construct.isUnknownOccupant,
+                    },
+                    {
+                      label: selectedAttackerId === construct?.id ? 'Cancel Targeting' : 'Choose Attack Target',
+                      onClick: () => {
+                        setSelectedAttackerId((current) => (current === construct.id ? null : construct.id))
+                        setOpenMenuKey(null)
+                      },
+                      disabled: !construct || construct.isUnknownOccupant || !canConstructAttackThisTurn(construct, match?.turn_number, isOwnTurn) || saving || loading || !isBattlePhase,
+                    },
+                    {
+                      label: 'Attack Opponent',
+                      onClick: () => {
+                        setOpenMenuKey(null)
+                        handleAttackPlayer(construct.id)
+                      },
+                      disabled: !construct || construct.isUnknownOccupant || !canConstructAttackThisTurn(construct, match?.turn_number, isOwnTurn) || saving || loading || !isBattlePhase,
+                    },
+                  ]}
                 />
               ))}
             </div>
             <div className="mp-hand-zone">
               <div className="saved-title">Your Hand</div>
-              <div className="saved-empty">Construct hand count: {ownHandCards.length}</div>
+              <div className="saved-empty">Cards in hand: {ownHandCards.length}</div>
               {hiddenLegacyTechniqueCards > 0 && <div className="saved-empty">Legacy cards hidden: {hiddenLegacyTechniqueCards}</div>}
               <div className="mp-hand-row">
                 {ownHandCards.length === 0 && <div className="mp-hand-card is-placeholder">No cards in hand.</div>}
@@ -1123,27 +1427,25 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
                     key={card.id}
                     card={card}
                     construct={constructsById[card.linked_match_construct_id] || null}
-                    technique={techniqueDetailsById[card.source_technique_id] || {
-                      id: card.source_technique_id,
-                      name: card.technique_name,
-                      topic: card.technique_topic,
-                      subtopic: card.technique_subtopic,
-                      effect_type: card.technique_effect_type,
-                      effect_description: card.technique_effect_description,
-                      worked_example: card.technique_worked_example,
-                    }}
                     canPlay={
                       !saving &&
                       isOwnTurn &&
-                      isMatchActive &&
-                      card.source_type === 'construct' &&
-                      openOwnSlots.length > 0 &&
-                      (playerStateByUserId[ownPlayerId]?.ingenuity_current ?? 0) >=
-                        (constructsById[card.linked_match_construct_id]?.ingenuity_cost ?? 0)
+                      isBattlePhase &&
+                      (
+                        card.source_type === 'spell' ||
+                        (
+                          card.source_type === 'construct' &&
+                          openOwnSlots.length > 0 &&
+                          (playerStateByUserId[ownPlayerId]?.ingenuity_current ?? 0) >=
+                            (constructsById[card.linked_match_construct_id]?.ingenuity_cost ?? 0)
+                        )
+                      )
                     }
                     openSlots={card.source_type === 'construct' ? openOwnSlots : []}
                     onPlay={handlePlayConstruct}
                     onShowDetails={openHandDetails}
+                    menuOpen={openMenuKey === `hand-${card.id}`}
+                    onToggleMenu={() => setOpenMenuKey((current) => (current === `hand-${card.id}` ? null : `hand-${card.id}`))}
                   />
                 ))}
               </div>
@@ -1158,10 +1460,40 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
             <SideZone title="Your Discard" count={ownPlayerState?.cards_in_discard ?? 0} hint="Used and destroyed friendly cards." />
             <SideZone title="Your Fatigue" count={ownPlayerState?.fatigue_count ?? 0} hint="Damage that increases each time you try to draw from an empty deck." />
           </div>
+          <div className="panel mp-side-actions-panel">
+            <div className="saved-title">Match Controls</div>
+            {selectedAttacker && isBattlePhase && (
+              <div className="saved-empty">Attacker selected: {selectedAttacker.title || 'Construct'}</div>
+            )}
+            <div className="mp-side-actions">
+              {selectedAttacker && isBattlePhase && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => setSelectedAttackerId(null)}
+                  disabled={saving}
+                >
+                  Cancel Attack
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn"
+                onClick={() => handleEndTurn()}
+                disabled={!isOwnTurn || saving || loading || !isBattlePhase}
+              >
+                {saving && isOwnTurn ? 'Processing...' : 'End Turn'}
+              </button>
+              <button type="button" className="btn danger" onClick={handleSurrender} disabled={saving || loading || !isMatchActive}>
+                Surrender
+              </button>
+            </div>
+          </div>
         </aside>
       </div>
 
       <DetailsModal detailCard={detailCard} onClose={() => setDetailCard(null)} />
+      <SharedResolutionModal resolution={sharedResolution} onClose={() => setSharedResolution(null)} />
       <DeconstructionModal
         targetConstruct={activeDeconstructionTarget}
         steps={activeDeconstructionSteps}

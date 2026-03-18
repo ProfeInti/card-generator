@@ -207,7 +207,7 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenDeckBuil
     setNotice('')
 
     try {
-      const result = await startMatchForRoom(roomId, 75)
+      const result = await startMatchForRoom(roomId, 120)
       if (!result?.match_id) throw new Error(result?.message || 'Could not start match.')
       setNotice(`Match created: ${result.match_id}`)
       await loadLobby()
