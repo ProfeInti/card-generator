@@ -73,7 +73,7 @@ export function buildExercisesTemplateJson() {
     format: INTICORE_FORMAT,
     entity: 'competitive_exercises',
     version: 1,
-    notes: 'sourceAuthor, topic, exerciseNumber and pageNumber are required. sourceTitle is optional and stores the original book or source title. The app regenerates the exercise name automatically from author + topic + exercise number + page.',
+    notes: 'sourceAuthor, topic, exerciseNumber, pageNumber and statement are required. pageNumber must be a positive integer. sourceYear is optional but, if present, must be an integer between 0 and 9999. status must be one of draft, proposed, approved or rejected. statement and finalAnswer accept editor HTML or plain text with inline latex between $...$. sourceTitle is optional and stores the original book or source title. The app regenerates the exercise name automatically from author + topic + exercise number + page.',
     exercises: [
       {
         sourceTitle: 'Algebra Workbook',

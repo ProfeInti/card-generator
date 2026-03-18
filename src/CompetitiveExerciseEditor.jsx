@@ -63,7 +63,7 @@ function hasRequiredExerciseIdentity(values) {
     String(values?.sourceAuthor || '').trim()
       && String(values?.topic || '').trim()
       && String(values?.exerciseNumber || '').trim()
-      && toOptionalInt(values?.pageNumber) !== null
+      && toOptionalPositiveInt(values?.pageNumber) !== null
   )
 }
 
@@ -94,6 +94,16 @@ function toOptionalInt(value) {
   return Number.isInteger(parsed) ? parsed : null
 }
 
+function toOptionalPositiveInt(value) {
+  const parsed = toOptionalInt(value)
+  return parsed !== null && parsed > 0 ? parsed : null
+}
+
+function toOptionalYear(value) {
+  const parsed = toOptionalInt(value)
+  return parsed !== null && parsed >= 0 && parsed <= 9999 ? parsed : null
+}
+
 function toNullableText(value) {
   const normalized = String(value || '').trim()
   return normalized || null
@@ -112,9 +122,9 @@ function toPayload(form, userId, role) {
     source_work_title: toNullableText(form.sourceTitle),
     source_type: toNullableText(form.sourceType),
     source_author: toNullableText(form.sourceAuthor),
-    source_year: toOptionalInt(form.sourceYear),
+    source_year: toOptionalYear(form.sourceYear),
     source_location: toNullableText(form.sourceLocation),
-    page_number: toOptionalInt(form.pageNumber),
+    page_number: toOptionalPositiveInt(form.pageNumber),
     exercise_number: toNullableText(form.exerciseNumber),
     statement: String(form.statement || '').trim(),
     final_answer: String(form.finalAnswer || '').trim() || null,
@@ -199,9 +209,9 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
         sourceTitle: form.sourceTitle || '',
         sourceType: form.sourceType || '',
         sourceAuthor: form.sourceAuthor || '',
-        sourceYear: toOptionalInt(form.sourceYear),
+        sourceYear: toOptionalYear(form.sourceYear),
         sourceLocation: form.sourceLocation || '',
-        pageNumber: toOptionalInt(form.pageNumber),
+        pageNumber: toOptionalPositiveInt(form.pageNumber),
         exerciseNumber: form.exerciseNumber || '',
         topic: form.topic || '',
         subtopic: form.subtopic || '',
@@ -267,9 +277,9 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
           source_work_title: toNullableText(item?.sourceTitle),
           source_type: toNullableText(item?.sourceType),
           source_author: toNullableText(item?.sourceAuthor),
-          source_year: toOptionalInt(item?.sourceYear),
+          source_year: toOptionalYear(item?.sourceYear),
           source_location: toNullableText(item?.sourceLocation),
-          page_number: toOptionalInt(item?.pageNumber),
+          page_number: toOptionalPositiveInt(item?.pageNumber),
           exercise_number: toNullableText(item?.exerciseNumber),
           statement: normalizeCompetitiveRichField(item?.statement),
           final_answer: normalizeCompetitiveRichField(item?.finalAnswer) || null,
@@ -293,14 +303,18 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
         fileSeen.add(importKey)
 
         const existing = existingByKey.get(importKey)
-        if (existing) {
-          const row = await updateOwnCompetitiveExercise(existing.id, session.userId, payload)
-          existingByKey.set(importKey, row)
-          updatedCount += 1
-        } else {
-          const row = await createCompetitiveExercise(payload)
-          existingByKey.set(importKey, row)
-          createdCount += 1
+        try {
+          if (existing) {
+            const row = await updateOwnCompetitiveExercise(existing.id, session.userId, payload)
+            existingByKey.set(importKey, row)
+            updatedCount += 1
+          } else {
+            const row = await createCompetitiveExercise(payload)
+            existingByKey.set(importKey, row)
+            createdCount += 1
+          }
+        } catch {
+          skippedCount += 1
         }
       }
 
@@ -360,8 +374,12 @@ export default function CompetitiveExerciseEditor({ session, onBackToCompetitive
         throw new Error('Exercise number is required.')
       }
 
-      if (toOptionalInt(form.pageNumber) === null) {
-        throw new Error('Page number must be a valid integer.')
+      if (toOptionalPositiveInt(form.pageNumber) === null) {
+        throw new Error('Page number must be a positive integer.')
+      }
+
+      if (String(form.sourceYear || '').trim() && toOptionalYear(form.sourceYear) === null) {
+        throw new Error('Source year must be an integer between 0 and 9999.')
       }
 
       if (!hasMeaningfulHtmlContent(payload.statement)) {
