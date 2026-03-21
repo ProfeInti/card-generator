@@ -11,16 +11,70 @@ import TableCell from '@tiptap/extension-table-cell'
 import MathInlineNode from './MathInlineNode'
 import ResizableImageNode from './ResizableImageNode'
 
+const SKETCH_WIDTH = 900
+const SKETCH_HEIGHT = 420
+const SKETCH_COLORS = ['#111827', '#0f766e', '#2563eb', '#7c3aed', '#dc2626', '#ea580c', '#ca8a04', '#ffffff']
+
 function toPositiveInt(value, fallback) {
   const n = Number(value)
   if (!Number.isInteger(n) || n <= 0) return fallback
   return n
 }
 
+function buildPoint(event, canvas) {
+  const rect = canvas.getBoundingClientRect()
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+    y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+  }
+}
+
+function drawStroke(ctx, stroke) {
+  if (!ctx || !stroke?.points?.length) return
+
+  ctx.save()
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.lineWidth = stroke.size
+  ctx.globalCompositeOperation = stroke.tool === 'eraser' ? 'destination-out' : 'source-over'
+  ctx.strokeStyle = stroke.color
+  ctx.beginPath()
+  ctx.moveTo(stroke.points[0].x, stroke.points[0].y)
+
+  if (stroke.points.length === 1) {
+    ctx.lineTo(stroke.points[0].x + 0.01, stroke.points[0].y + 0.01)
+  } else {
+    stroke.points.slice(1).forEach((point) => {
+      ctx.lineTo(point.x, point.y)
+    })
+  }
+
+  ctx.stroke()
+  ctx.restore()
+}
+
+function redrawSketchCanvas(canvas, strokes) {
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ;(Array.isArray(strokes) ? strokes : []).forEach((stroke) => drawStroke(ctx, stroke))
+}
+
 export default function DescriptionEditor({ value, onChange, baseFontFamily, baseFontSize, readOnly = false }) {
   const [textColor, setTextColor] = useState('#b6fff0')
   const [imageUrlInput, setImageUrlInput] = useState('')
+  const [isSketchOpen, setIsSketchOpen] = useState(false)
+  const [sketchColor, setSketchColor] = useState(SKETCH_COLORS[0])
+  const [sketchSize, setSketchSize] = useState(4)
+  const [sketchTool, setSketchTool] = useState('pen')
+  const [sketchStrokes, setSketchStrokes] = useState([])
   const fileInputRef = useRef(null)
+  const sketchCanvasRef = useRef(null)
+  const sketchStrokeRef = useRef(null)
 
   const editor = useEditor({
     extensions: [
@@ -50,6 +104,15 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
     if (current !== value) editor.commands.setContent(value, false)
   }, [value, editor])
 
+  useEffect(() => {
+    if (!isSketchOpen) return
+    const canvas = sketchCanvasRef.current
+    if (!canvas) return
+    canvas.width = SKETCH_WIDTH
+    canvas.height = SKETCH_HEIGHT
+    redrawSketchCanvas(canvas, sketchStrokes)
+  }, [isSketchOpen, sketchStrokes])
+
   const insertMath = (latex) => {
     if (!editor) return
     editor.chain().focus().insertContent({ type: 'mathInline', attrs: { latex } }).run()
@@ -61,6 +124,15 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
     if (!url) return
     editor.chain().focus().setImage({ src: url }).run()
     setImageUrlInput('')
+  }
+
+  const insertSketchImage = () => {
+    if (!editor || !sketchCanvasRef.current) return
+    const src = sketchCanvasRef.current.toDataURL('image/png')
+    editor.chain().focus().setImage({ src }).run()
+    setIsSketchOpen(false)
+    setSketchStrokes([])
+    sketchStrokeRef.current = null
   }
 
   const insertTable = () => {
@@ -93,6 +165,40 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
     reader.readAsDataURL(file)
   }
 
+  const startSketchStroke = (event) => {
+    const canvas = sketchCanvasRef.current
+    if (!canvas) return
+    const firstPoint = buildPoint(event, canvas)
+    const nextStroke = {
+      tool: sketchTool,
+      color: sketchColor,
+      size: sketchSize,
+      points: [firstPoint],
+    }
+
+    sketchStrokeRef.current = nextStroke
+    setSketchStrokes((prev) => [...prev, nextStroke])
+  }
+
+  const extendSketchStroke = (event) => {
+    const canvas = sketchCanvasRef.current
+    const activeStroke = sketchStrokeRef.current
+    if (!canvas || !activeStroke) return
+
+    const point = buildPoint(event, canvas)
+    const nextStroke = {
+      ...activeStroke,
+      points: [...activeStroke.points, point],
+    }
+
+    sketchStrokeRef.current = nextStroke
+    setSketchStrokes((prev) => [...prev.slice(0, -1), nextStroke])
+  }
+
+  const endSketchStroke = () => {
+    sketchStrokeRef.current = null
+  }
+
   const hasSelection = Boolean(editor && !editor.state.selection.empty)
 
   const toggleInlineMark = (mark) => {
@@ -114,244 +220,254 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
   return (
     <div className="rt-wrap">
       {!readOnly && (
-      <div className="rt-toolbar">
-        <button
-          type="button"
-          className={`rt-btn ${editor.isActive('bold') ? 'is-on' : ''}`}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => toggleInlineMark('bold')}
-          disabled={!hasSelection}
-          title={hasSelection ? 'Bold selected text' : 'Select text first'}
-        >
-          B
-        </button>
+        <div className="rt-toolbar">
+          <button
+            type="button"
+            className={`rt-btn ${editor.isActive('bold') ? 'is-on' : ''}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => toggleInlineMark('bold')}
+            disabled={!hasSelection}
+            title={hasSelection ? 'Bold selected text' : 'Select text first'}
+          >
+            B
+          </button>
 
-        <button
-          type="button"
-          className={`rt-btn ${editor.isActive('italic') ? 'is-on' : ''}`}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => toggleInlineMark('italic')}
-          disabled={!hasSelection}
-          title={hasSelection ? 'Italic selected text' : 'Select text first'}
-        >
-          I
-        </button>
+          <button
+            type="button"
+            className={`rt-btn ${editor.isActive('italic') ? 'is-on' : ''}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => toggleInlineMark('italic')}
+            disabled={!hasSelection}
+            title={hasSelection ? 'Italic selected text' : 'Select text first'}
+          >
+            I
+          </button>
 
-        <button
-          type="button"
-          className={`rt-btn ${editor.isActive('underline') ? 'is-on' : ''}`}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => toggleInlineMark('underline')}
-          disabled={!hasSelection}
-          title={hasSelection ? 'Underline selected text' : 'Select text first'}
-        >
-          U
-        </button>
+          <button
+            type="button"
+            className={`rt-btn ${editor.isActive('underline') ? 'is-on' : ''}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => toggleInlineMark('underline')}
+            disabled={!hasSelection}
+            title={hasSelection ? 'Underline selected text' : 'Select text first'}
+          >
+            U
+          </button>
 
-        <div className="rt-sep" />
+          <div className="rt-sep" />
 
-        <label className="rt-color">
-          <span>Color</span>
+          <label className="rt-color">
+            <span>Color</span>
+            <input
+              type="color"
+              value={textColor}
+              onChange={(e) => {
+                const c = e.target.value
+                setTextColor(c)
+                editor.chain().focus().setColor(c).run()
+              }}
+            />
+          </label>
+
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => editor.chain().focus().unsetColor().run()}
+            title="Clear color"
+          >
+            Clear color
+          </button>
+
+          <div className="rt-sep" />
+
+          <button
+            type="button"
+            className={`rt-btn ${editor.isActive('bulletList') ? 'is-on' : ''}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => toggleList('bullet')}
+            title="Bullet list"
+          >
+            Bullet
+          </button>
+
+          <button
+            type="button"
+            className={`rt-btn ${editor.isActive('orderedList') ? 'is-on' : ''}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => toggleList('ordered')}
+            title="Numbered list"
+          >
+            1. List
+          </button>
+
+          <div className="rt-sep" />
+
           <input
-            type="color"
-            value={textColor}
-            onChange={(e) => {
-              const c = e.target.value
-              setTextColor(c)
-              editor.chain().focus().setColor(c).run()
+            className="rt-url-input"
+            type="url"
+            value={imageUrlInput}
+            onChange={(e) => setImageUrlInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                insertImageByUrl(imageUrlInput)
+              }
             }}
+            placeholder="https://image-url"
+            title="Image URL"
           />
-        </label>
 
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().unsetColor().run()}
-          title="Clear color"
-        >
-          Clear color
-        </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => insertImageByUrl(imageUrlInput)}
+            title="Insert image by URL"
+          >
+            Add Img URL
+          </button>
 
-        <div className="rt-sep" />
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => fileInputRef.current?.click()}
+            title="Upload image from your computer"
+          >
+            Upload Img
+          </button>
 
-        <button
-          type="button"
-          className={`rt-btn ${editor.isActive('bulletList') ? 'is-on' : ''}`}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => toggleList('bullet')}
-          title="Bullet list"
-        >
-          • List
-        </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setIsSketchOpen(true)}
+            title="Open sketch pad"
+          >
+            Sketch
+          </button>
 
-        <button
-          type="button"
-          className={`rt-btn ${editor.isActive('orderedList') ? 'is-on' : ''}`}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => toggleList('ordered')}
-          title="Numbered list"
-        >
-          1. List
-        </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={onPickImageFile}
+          />
 
-        <div className="rt-sep" />
+          <div className="rt-sep" />
 
-        <input
-          className="rt-url-input"
-          type="url"
-          value={imageUrlInput}
-          onChange={(e) => setImageUrlInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              insertImageByUrl(imageUrlInput)
-            }
-          }}
-          placeholder="https://image-url"
-          title="Image URL"
-        />
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={insertTable}
+            title="Insert table"
+          >
+            Table
+          </button>
 
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => insertImageByUrl(imageUrlInput)}
-          title="Insert image by URL"
-        >
-          Add Img URL
-        </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => editor.chain().focus().addColumnAfter().run()}
+            disabled={!editor.isActive('table')}
+            title="Add column"
+          >
+            +Col
+          </button>
 
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => fileInputRef.current?.click()}
-          title="Upload image from your computer"
-        >
-          Upload Img
-        </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => editor.chain().focus().addRowAfter().run()}
+            disabled={!editor.isActive('table')}
+            title="Add row"
+          >
+            +Row
+          </button>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: 'none' }}
-          onChange={onPickImageFile}
-        />
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => editor.chain().focus().deleteColumn().run()}
+            disabled={!editor.isActive('table')}
+            title="Delete column"
+          >
+            -Col
+          </button>
 
-        <div className="rt-sep" />
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => editor.chain().focus().deleteRow().run()}
+            disabled={!editor.isActive('table')}
+            title="Delete row"
+          >
+            -Row
+          </button>
 
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={insertTable}
-          title="Insert table"
-        >
-          Table
-        </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => editor.chain().focus().deleteTable().run()}
+            disabled={!editor.isActive('table')}
+            title="Delete table"
+          >
+            Del Table
+          </button>
 
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().addColumnAfter().run()}
-          disabled={!editor.isActive('table')}
-          title="Add column"
-        >
-          +Col
-        </button>
+          <div className="rt-sep" />
 
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().addRowAfter().run()}
-          disabled={!editor.isActive('table')}
-          title="Add row"
-        >
-          +Row
-        </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => insertMath('\\sqrt{x}')}
+          >
+            &radic;
+          </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => insertMath('\\frac{a}{b}')}
+          >
+            a/b
+          </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => insertMath('x^{n}')}
+          >
+            x^n
+          </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => insertMath('\\sum_{i=1}^{n} i')}
+          >
+            &Sigma;
+          </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => insertMath('\\int_{a}^{b} f(x)\\,dx')}
+          >
+            &int;
+          </button>
 
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().deleteColumn().run()}
-          disabled={!editor.isActive('table')}
-          title="Delete column"
-        >
-          -Col
-        </button>
-
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().deleteRow().run()}
-          disabled={!editor.isActive('table')}
-          title="Delete row"
-        >
-          -Row
-        </button>
-
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => editor.chain().focus().deleteTable().run()}
-          disabled={!editor.isActive('table')}
-          title="Delete table"
-        >
-          Del Table
-        </button>
-
-        <div className="rt-sep" />
-
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => insertMath('\\sqrt{x}')}
-        >
-          &radic;
-        </button>
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => insertMath('\\frac{a}{b}')}
-        >
-          a/b
-        </button>
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => insertMath('x^{n}')}
-        >
-          x^n
-        </button>
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => insertMath('\\sum_{i=1}^{n} i')}
-        >
-          &Sigma;
-        </button>
-        <button
-          type="button"
-          className="rt-btn"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => insertMath('\\int_{a}^{b} f(x)\\,dx')}
-        >
-          &int;
-        </button>
-
-        <div className="rt-hint">Tip: use image URL/upload and tables for graph statements and structured data.</div>
-      </div>
+          <div className="rt-hint">Tip: use image URL, sketches, uploads, and tables for graph statements and structured data.</div>
+        </div>
       )}
 
       <div
@@ -363,8 +479,105 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
       >
         <EditorContent editor={editor} />
       </div>
+
+      {!readOnly && isSketchOpen && (
+        <div className="rt-sketch-overlay" onClick={() => setIsSketchOpen(false)}>
+          <div className="rt-sketch-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="rt-sketch-top">
+              <div className="saved-title">Sketch Pad</div>
+              <div className="menu-actions wb-inline-actions">
+                <button type="button" className="btn" onClick={() => setSketchStrokes((prev) => prev.slice(0, -1))} disabled={!sketchStrokes.length}>
+                  Undo Stroke
+                </button>
+                <button type="button" className="btn" onClick={() => setSketchStrokes([])} disabled={!sketchStrokes.length}>
+                  Clear
+                </button>
+                <button type="button" className="btn" onClick={() => setIsSketchOpen(false)}>
+                  Close
+                </button>
+                <button type="button" className="btn" onClick={insertSketchImage} disabled={!sketchStrokes.length}>
+                  Insert Sketch
+                </button>
+              </div>
+            </div>
+
+            <div className="rt-sketch-toolbar">
+              <div className="rt-sketch-tool-group">
+                <button
+                  type="button"
+                  className={`rt-btn ${sketchTool === 'pen' ? 'is-on' : ''}`}
+                  onClick={() => setSketchTool('pen')}
+                >
+                  Pen
+                </button>
+                <button
+                  type="button"
+                  className={`rt-btn ${sketchTool === 'eraser' ? 'is-on' : ''}`}
+                  onClick={() => setSketchTool('eraser')}
+                >
+                  Eraser
+                </button>
+              </div>
+
+              <div className="rt-sketch-tool-group">
+                {SKETCH_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={`rt-sketch-swatch ${sketchColor === color ? 'is-on' : ''}`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => {
+                      setSketchColor(color)
+                      setSketchTool('pen')
+                    }}
+                    title={color}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={sketchColor}
+                  onChange={(e) => {
+                    setSketchColor(e.target.value)
+                    setSketchTool('pen')
+                  }}
+                />
+              </div>
+
+              <label className="rt-sketch-size">
+                <span>Brush {sketchSize}px</span>
+                <input
+                  type="range"
+                  min="2"
+                  max="24"
+                  step="1"
+                  value={sketchSize}
+                  onChange={(e) => setSketchSize(Number(e.target.value))}
+                />
+              </label>
+            </div>
+
+            <div className="rt-sketch-stage">
+              <canvas
+                ref={sketchCanvasRef}
+                className="rt-sketch-canvas"
+                onPointerDown={(event) => {
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                  startSketchStroke(event)
+                }}
+                onPointerMove={(event) => {
+                  if ((event.buttons & 1) !== 1) return
+                  extendSketchStroke(event)
+                }}
+                onPointerUp={(event) => {
+                  event.currentTarget.releasePointerCapture(event.pointerId)
+                  endSketchStroke()
+                }}
+                onPointerLeave={() => endSketchStroke()}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-
-

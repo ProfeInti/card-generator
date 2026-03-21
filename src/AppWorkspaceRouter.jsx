@@ -2,6 +2,10 @@
 import { CompetitiveModeShell, CreativeModeShell, MainMenu } from './components/ModeShells'
 import { COMPETITIVE_SECTIONS } from './components/competitiveSections'
 
+const WhiteboardModeHub = lazy(() => import('./WhiteboardModeHub'))
+const WhiteboardExerciseEditor = lazy(() => import('./WhiteboardExerciseEditor'))
+const WhiteboardWorkspace = lazy(() => import('./WhiteboardWorkspace'))
+
 const CompetitiveExerciseEditor = lazy(() => import('./CompetitiveExerciseEditor'))
 const CompetitiveReviewPanel = lazy(() => import('./CompetitiveReviewPanel'))
 const CompetitiveTechniqueEditor = lazy(() => import('./CompetitiveTechniqueEditor'))
@@ -47,6 +51,7 @@ export default function AppWorkspaceRouter({
         session={session}
         onOpenCreative={() => setWorkspaceTarget('creative')}
         onOpenCompetitive={() => setWorkspaceTarget('competitive')}
+        onOpenWhiteboard={() => setWorkspaceTarget('whiteboard')}
         onOpenMultiplayer={() => setWorkspaceTarget('multiplayer')}
         onLogout={onLogout}
       />
@@ -262,6 +267,35 @@ export default function AppWorkspaceRouter({
     )
   }
 
+  if (workspaceTarget === 'whiteboard') {
+    return withSuspense(
+      <WhiteboardModeHub
+        session={session}
+        onOpenBoard={() => setWorkspaceTarget('whiteboard-board')}
+        onOpenExercises={() => setWorkspaceTarget('whiteboard-exercises')}
+        onBackToMenu={() => setWorkspaceTarget(null)}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'whiteboard-exercises') {
+    return withSuspense(
+      <WhiteboardExerciseEditor
+        session={session}
+        onBackToWhiteboard={() => setWorkspaceTarget('whiteboard')}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'whiteboard-board') {
+    return withSuspense(
+      <WhiteboardWorkspace
+        session={session}
+        onBackToWhiteboard={() => setWorkspaceTarget('whiteboard')}
+      />
+    )
+  }
+
   if (workspaceTarget.startsWith('competitive')) {
     const activeSectionId = workspaceTarget === 'competitive' ? COMPETITIVE_SECTIONS[0].id : workspaceTarget
 
@@ -293,6 +327,7 @@ export default function AppWorkspaceRouter({
       session={session}
       onOpenCreative={() => setWorkspaceTarget('creative')}
       onOpenCompetitive={() => setWorkspaceTarget('competitive')}
+      onOpenWhiteboard={() => setWorkspaceTarget('whiteboard')}
       onOpenMultiplayer={() => setWorkspaceTarget('multiplayer')}
       onLogout={onLogout}
     />

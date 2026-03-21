@@ -135,6 +135,12 @@ export default function MathInlineView({ node, updateAttributes }) {
     }
   }, [latex])
 
+  const handleModalAction = useCallback((event, shouldSave) => {
+    event.preventDefault()
+    event.stopPropagation()
+    closeModal(shouldSave)
+  }, [closeModal])
+
   useEffect(() => {
     if (!open) return
 
@@ -210,15 +216,12 @@ export default function MathInlineView({ node, updateAttributes }) {
             <button
               type="button"
               className="math-close"
+              onPointerDown={(e) => handleModalAction(e, false)}
               onMouseDown={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
               }}
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                closeModal(false)
-              }}
+              onClick={(e) => handleModalAction(e, false)}
               aria-label="Close"
             >
               X
@@ -230,15 +233,12 @@ export default function MathInlineView({ node, updateAttributes }) {
               <button
                 type="button"
                 className="rt-btn"
+                onPointerDown={(e) => handleModalAction(e, true)}
                 onMouseDown={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
                 }}
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  closeModal(true)
-                }}
+                onClick={(e) => handleModalAction(e, true)}
               >
                 Save
               </button>
@@ -246,15 +246,12 @@ export default function MathInlineView({ node, updateAttributes }) {
               <button
                 type="button"
                 className="rt-btn"
+                onPointerDown={(e) => handleModalAction(e, false)}
                 onMouseDown={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
                 }}
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  closeModal(false)
-                }}
+                onClick={(e) => handleModalAction(e, false)}
               >
                 Cancel
               </button>
