@@ -769,6 +769,16 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
 
     const timerId = window.setTimeout(async () => {
       try {
+        if (isViewingForeignPublicBoard) {
+          const clonedWorkspace = await forkForeignWorkspaceForEditing(nodes, links)
+          if (clonedWorkspace) {
+            remoteAppliedSignatureRef.current = nextSignature
+            setCollaborationStatus('Changes were saved to your own copy of this public whiteboard.')
+            setCollaborationError('')
+            return
+          }
+        }
+
         const updatedWorkspace = await updateWhiteboardWorkspace(workspaceId, session.userId, {
           exerciseTitle: selectedExercise.title || 'Math Whiteboard',
           exerciseSnapshot: selectedExercise,
@@ -787,7 +797,15 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     }, 400)
 
     return () => window.clearTimeout(timerId)
-  }, [nodes, links, selectedExercise, workspaceId, session?.userId, loadedWorkspace?.visibility])
+  }, [
+    nodes,
+    links,
+    selectedExercise,
+    workspaceId,
+    session?.userId,
+    loadedWorkspace,
+    isViewingForeignPublicBoard,
+  ])
 
   const updateSelectedNode = (key, value) => {
     if (!selectedNodeId) return
@@ -1095,6 +1113,43 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     } catch (error) {
       setCollaborationError(error?.message || 'Could not save your copy of this whiteboard.')
     }
+  }
+
+  const forkForeignWorkspaceForEditing = async (currentNodes, currentLinks) => {
+    if (!session?.userId || !selectedExercise || !isViewingForeignPublicBoard) return null
+
+    const savedExercise = saveWhiteboardExercise({
+      ...buildEmptyWhiteboardExercise(),
+      ...selectedExercise,
+      id: null,
+    })
+
+    saveWorkspace(savedExercise.id, {
+      nodes: currentNodes,
+      links: currentLinks,
+    })
+
+    const clonedWorkspace = await cloneWhiteboardWorkspace({
+      ownerUserId: session.userId,
+      sourceWorkspaceId: loadedWorkspace?.id || null,
+      exerciseLocalId: savedExercise.id,
+      exerciseTitle: savedExercise.title || 'Math Whiteboard',
+      exerciseSnapshot: { ...savedExercise },
+      nodes: currentNodes,
+      links: currentLinks,
+      visibility: 'public',
+      lastEditorUserId: session.userId,
+    })
+
+    setExercises(listWhiteboardExercises())
+    setSelectedExercise(savedExercise)
+    setExerciseId(savedExercise.id)
+    setWorkspaceId(clonedWorkspace.id)
+    setLoadedWorkspace(clonedWorkspace)
+    setActiveWhiteboardExerciseId(savedExercise.id)
+    setActiveWhiteboardWorkspaceId(clonedWorkspace.id)
+
+    return clonedWorkspace
   }
 
   const openExercise = async (nextExerciseId) => {

@@ -29,6 +29,13 @@ function normalizeWorkspaceRow(row) {
   }
 }
 
+function getSingleWorkspaceRow(rows, emptyMessage) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new Error(emptyMessage || 'No se encontro la pizarra colaborativa solicitada.')
+  }
+  return normalizeWorkspaceRow(rows[0])
+}
+
 export async function listWhiteboardWorkspaces(ownerUserId) {
   const { data, error } = await supabase
     .from('whiteboard_workspaces')
@@ -101,10 +108,9 @@ export async function ensureWhiteboardWorkspace({
       onConflict: 'owner_user_id,exercise_local_id',
     })
     .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
-    .single()
 
   if (error) throw error
-  return normalizeWorkspaceRow(data)
+  return getSingleWorkspaceRow(data, 'No se pudo crear o recuperar la pizarra colaborativa.')
 }
 
 export async function updateWhiteboardWorkspace(workspaceId, ownerUserId, payload) {
@@ -121,10 +127,12 @@ export async function updateWhiteboardWorkspace(workspaceId, ownerUserId, payloa
     .eq('id', workspaceId)
     .eq('owner_user_id', ownerUserId)
     .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
-    .single()
 
   if (error) throw error
-  return normalizeWorkspaceRow(data)
+  return getSingleWorkspaceRow(
+    data,
+    'No tienes permisos para editar esta pizarra colaborativa o ya no existe.'
+  )
 }
 
 export async function cloneWhiteboardWorkspace({
@@ -152,10 +160,9 @@ export async function cloneWhiteboardWorkspace({
       last_editor_user_id: lastEditorUserId || ownerUserId,
     })
     .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
-    .single()
 
   if (error) throw error
-  return normalizeWorkspaceRow(data)
+  return getSingleWorkspaceRow(data, 'No se pudo clonar la pizarra colaborativa.')
 }
 
 export async function deleteWhiteboardWorkspace(workspaceId, ownerUserId) {
