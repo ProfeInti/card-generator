@@ -607,9 +607,66 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     }
   }, [session, workspaceId])
 
+  const preserveActiveEditorValues = useCallback((incomingNodes, incomingLinks) => {
+    const normalizedNodes = Array.isArray(incomingNodes) ? incomingNodes : []
+    const normalizedLinks = Array.isArray(incomingLinks) ? incomingLinks : []
+    const activeEditor = editorStateRef.current
+
+    if (!activeEditor?.mode || !activeEditor.targetId) {
+      return {
+        nodes: normalizedNodes,
+        links: normalizedLinks,
+      }
+    }
+
+    if (activeEditor.mode === 'node') {
+      const localNode = currentNodesRef.current.find((node) => node.id === activeEditor.targetId)
+      if (!localNode) {
+        return {
+          nodes: normalizedNodes,
+          links: normalizedLinks,
+        }
+      }
+
+      return {
+        nodes: normalizedNodes.map((node) => (
+          node.id === activeEditor.targetId
+            ? { ...node, ...localNode }
+            : node
+        )),
+        links: normalizedLinks,
+      }
+    }
+
+    if (activeEditor.mode === 'link') {
+      const localLink = currentLinksRef.current.find((link) => link.id === activeEditor.targetId)
+      if (!localLink) {
+        return {
+          nodes: normalizedNodes,
+          links: normalizedLinks,
+        }
+      }
+
+      return {
+        nodes: normalizedNodes,
+        links: normalizedLinks.map((link) => (
+          link.id === activeEditor.targetId
+            ? { ...link, ...localLink }
+            : link
+        )),
+      }
+    }
+
+    return {
+      nodes: normalizedNodes,
+      links: normalizedLinks,
+    }
+  }, [])
+
   const applyRemoteRealtimeBoardState = useCallback((nextNodes, nextLinks, options = {}) => {
-    const normalizedNodes = Array.isArray(nextNodes) ? nextNodes : []
-    const normalizedLinks = Array.isArray(nextLinks) ? nextLinks : []
+    const preservedBoard = preserveActiveEditorValues(nextNodes, nextLinks)
+    const normalizedNodes = preservedBoard.nodes
+    const normalizedLinks = preservedBoard.links
     const signature = serializeBoard(normalizedNodes, normalizedLinks)
 
     remoteAppliedSignatureRef.current = signature
@@ -673,7 +730,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
           : prev
       ))
     }
-  }, [])
+  }, [preserveActiveEditorValues])
 
   const commitHistoryEntry = (snapshot) => {
     setHistoryPast((prev) => [...prev, snapshot].slice(-HISTORY_LIMIT))
