@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { downloadJsonFile, parseJsonFile } from './lib/competitiveJson'
 import {
   cloneWhiteboardWorkspace,
   deleteWhiteboardWorkspace,
+  deleteWhiteboardWorkspaceByExercise,
+  ensureRootWhiteboardWorkspace,
   getWhiteboardWorkspaceById,
   listPublicWhiteboardWorkspaces,
   listWhiteboardWorkspaces,
 } from './data/whiteboardWorkspaceRepo'
 import {
   buildEmptyWhiteboardExercise,
+  deleteWhiteboardExercise,
   listWhiteboardExercises,
   saveWhiteboardExercise,
   saveWorkspace,
@@ -22,7 +25,7 @@ import {
 } from './lib/whiteboardWorkspaceJson'
 
 export default function WhiteboardModeHub({ onOpenBoard, onOpenExercises, onBackToMenu, session }) {
-  const exercises = useMemo(() => listWhiteboardExercises(), [])
+  const [exercises, setExercises] = useState(() => listWhiteboardExercises())
   const [workspaces, setWorkspaces] = useState([])
   const [publicWorkspaces, setPublicWorkspaces] = useState([])
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(false)
@@ -60,6 +63,7 @@ export default function WhiteboardModeHub({ onOpenBoard, onOpenExercises, onBack
 
   useEffect(() => {
     let cancelled = false
+    setExercises(listWhiteboardExercises())
     loadWorkspaces(cancelled)
     return () => {
       cancelled = true
@@ -75,6 +79,24 @@ export default function WhiteboardModeHub({ onOpenBoard, onOpenExercises, onBack
       await loadWorkspaces(false)
     } catch (error) {
       setWorkspaceError(error?.message || 'Could not delete the whiteboard.')
+    }
+  }
+
+  const handleDeleteExercise = async (exerciseId) => {
+    if (!exerciseId) return
+
+    try {
+      setWorkspaceError('')
+      deleteWhiteboardExercise(exerciseId)
+      if (session?.userId) {
+        await deleteWhiteboardWorkspaceByExercise(session.userId, exerciseId)
+        await loadWorkspaces(false)
+      }
+      setExercises(listWhiteboardExercises())
+      setActiveWhiteboardExerciseId('')
+      setActiveWhiteboardWorkspaceId('')
+    } catch (error) {
+      setWorkspaceError(error?.message || 'Could not delete the whiteboard exercise.')
     }
   }
 
@@ -119,13 +141,13 @@ export default function WhiteboardModeHub({ onOpenBoard, onOpenExercises, onBack
         nodes: imported.nodes,
         links: imported.links,
       })
+      setExercises(listWhiteboardExercises())
       setActiveWhiteboardExerciseId(savedExercise.id)
       setActiveWhiteboardWorkspaceId('')
 
       if (session?.userId) {
-        const clonedWorkspace = await cloneWhiteboardWorkspace({
+        const clonedWorkspace = await ensureRootWhiteboardWorkspace({
           ownerUserId: session.userId,
-          sourceWorkspaceId: imported.sourceWorkspaceId || null,
           exerciseLocalId: savedExercise.id,
           exerciseTitle: imported.title || savedExercise.title || 'Math Whiteboard',
           exerciseSnapshot: { ...savedExercise },
@@ -161,6 +183,7 @@ export default function WhiteboardModeHub({ onOpenBoard, onOpenExercises, onBack
         nodes: sourceWorkspace.nodes || [],
         links: sourceWorkspace.links || [],
       })
+      setExercises(listWhiteboardExercises())
 
       const clonedWorkspace = await cloneWhiteboardWorkspace({
         ownerUserId: session.userId,
@@ -170,7 +193,7 @@ export default function WhiteboardModeHub({ onOpenBoard, onOpenExercises, onBack
         exerciseSnapshot: { ...savedExercise },
         nodes: sourceWorkspace.nodes || [],
         links: sourceWorkspace.links || [],
-        visibility: 'public',
+        visibility: 'private',
         lastEditorUserId: session.userId,
       })
 
@@ -217,7 +240,7 @@ export default function WhiteboardModeHub({ onOpenBoard, onOpenExercises, onBack
                         <div className="saved-item-title">{workspace.exercise_title || 'Untitled whiteboard'}</div>
                         <div className="saved-item-meta">Synced in Supabase</div>
                         <div className="saved-item-tags">
-                          Public whiteboard | Nodes: {workspace.nodes?.length || 0} | Links: {workspace.links?.length || 0}
+                          {workspace.source_workspace_id ? 'Private copy' : 'Root whiteboard'} | {(workspace.visibility || 'private') === 'public' ? 'Public' : 'Private'} | Nodes: {workspace.nodes?.length || 0} | Links: {workspace.links?.length || 0}
                         </div>
                       </button>
                       <div className="menu-actions wb-inline-actions">
@@ -249,7 +272,7 @@ export default function WhiteboardModeHub({ onOpenBoard, onOpenExercises, onBack
               ) : loadingWorkspaces ? (
                 <div className="saved-empty">Loading public whiteboards...</div>
               ) : publicWorkspaces.length === 0 ? (
-                <div className="saved-empty">There are no public whiteboards from other users yet.</div>
+                <div className="saved-empty">There are no original public whiteboards from other users yet.</div>
               ) : (
                 <div className="saved-list">
                   {publicWorkspaces.map((workspace) => (
@@ -290,22 +313,28 @@ export default function WhiteboardModeHub({ onOpenBoard, onOpenExercises, onBack
               ) : (
                 <div className="saved-list">
                   {exercises.map((exercise) => (
-                    <button
-                      key={exercise.id}
-                      type="button"
-                      className="saved-item wb-record-card"
-                      onClick={() => {
-                        setActiveWhiteboardExerciseId(exercise.id)
-                        setActiveWhiteboardWorkspaceId('')
-                        onOpenBoard()
-                      }}
-                    >
-                      <div className="saved-item-title">{exercise.title || 'Untitled exercise'}</div>
-                      <div className="saved-item-meta">{exercise.topic || 'No topic'}</div>
-                      <div className="saved-item-tags">
-                        Data items: {exercise.dataItems?.length || 0} | {exercise.statement ? 'With statement' : 'No statement'}
+                    <div key={exercise.id} className="saved-item wb-record-card">
+                      <button
+                        type="button"
+                        className="wb-record-open"
+                        onClick={() => {
+                          setActiveWhiteboardExerciseId(exercise.id)
+                          setActiveWhiteboardWorkspaceId('')
+                          onOpenBoard()
+                        }}
+                      >
+                        <div className="saved-item-title">{exercise.title || 'Untitled exercise'}</div>
+                        <div className="saved-item-meta">{exercise.topic || 'No topic'}</div>
+                        <div className="saved-item-tags">
+                          Data items: {exercise.dataItems?.length || 0} | {exercise.statement ? 'With statement' : 'No statement'}
+                        </div>
+                      </button>
+                      <div className="menu-actions wb-inline-actions">
+                        <button type="button" className="btn danger" onClick={() => handleDeleteExercise(exercise.id)}>
+                          Delete Exercise
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}

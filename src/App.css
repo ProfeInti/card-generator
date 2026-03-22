@@ -586,7 +586,7 @@ body {
   padding: clamp(14px, 4vh, 42px) 16px 320px;
   overflow: auto;
   box-sizing: border-box;
-  z-index: 30000;
+  z-index: 32000;
   pointer-events: none;
 }
 
@@ -600,7 +600,7 @@ body {
   border-radius: 14px;
   padding: 12px;
   color: #fff;
-  z-index: 30010;
+  z-index: 32010;
   pointer-events: auto;
 }
 
@@ -625,7 +625,7 @@ body {
 .math-modal-actions-top {
   position: sticky;
   top: 0;
-  z-index: 30020;
+  z-index: 32020;
   padding: 8px 0;
   margin-top: 0;
   background: linear-gradient(180deg, rgba(18,18,18,0.98) 0%, rgba(18,18,18,0.9) 100%);
@@ -640,7 +640,7 @@ body {
 math-virtual-keyboard,
 .ML__keyboard,
 .ML__virtual-keyboard {
-  z-index: 29000 !important;
+  z-index: 31010 !important;
   pointer-events: auto !important;
 }
 
@@ -931,6 +931,89 @@ math-virtual-keyboard,
   background: linear-gradient(160deg, #1f1f1f 0%, #131313 100%);
   padding: 28px;
   box-shadow: 0 24px 44px rgba(0, 0, 0, 0.35);
+}
+
+.dungeon-shell {
+  background:
+    radial-gradient(circle at 15% 15%, rgba(248, 196, 84, 0.12), transparent 32%),
+    radial-gradient(circle at 82% 24%, rgba(126, 211, 122, 0.09), transparent 30%),
+    radial-gradient(circle at 50% 100%, rgba(87, 123, 255, 0.08), transparent 34%),
+    #111214;
+}
+
+.dungeon-card {
+  width: min(1080px, 96vw);
+}
+
+.dungeon-hero-panel {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
+  gap: 16px;
+}
+
+.dungeon-grid,
+.dungeon-foundation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dungeon-grid {
+  margin-top: 18px;
+}
+
+.dungeon-foundation {
+  margin-top: 18px;
+}
+
+.dungeon-panel,
+.dungeon-loop-card {
+  border: 1px solid #2f2f2f;
+  border-radius: 16px;
+  padding: 16px;
+  background:
+    linear-gradient(180deg, rgba(28, 28, 28, 0.98) 0%, rgba(17, 17, 17, 0.98) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 216, 117, 0.04);
+}
+
+.dungeon-section-title,
+.dungeon-panel-title {
+  margin: 0;
+  color: #fff5d6;
+}
+
+.dungeon-section-title {
+  font-size: 24px;
+  margin-top: 4px;
+}
+
+.dungeon-panel-title {
+  font-size: 18px;
+}
+
+.dungeon-copy {
+  margin: 10px 0 0;
+  color: #d0d0d0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.dungeon-loop-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: #e9e0b8;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .dungeon-hero-panel,
+  .dungeon-grid,
+  .dungeon-foundation-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .welcome-overline {
@@ -2379,6 +2462,49 @@ math-virtual-keyboard,
   margin-bottom: 14px;
 }
 
+.wb-collaboration-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.wb-collaboration-presence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wb-collab-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid #2f4654;
+  background: rgba(83, 209, 240, 0.08);
+  color: #dff8fb;
+  font-size: 12px;
+}
+
+.wb-collab-chip.is-muted {
+  border-color: #3b3b3b;
+  background: rgba(255, 255, 255, 0.04);
+  color: #b9b9b9;
+}
+
+.wb-collab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.wb-collaboration-activity {
+  color: #bfeef7;
+  font-size: 12px;
+}
+
 .wb-fullscreen-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -2512,6 +2638,13 @@ math-virtual-keyboard,
   dominant-baseline: middle;
 }
 
+.wb-link-presence {
+  font-size: 10px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  font-weight: 700;
+}
+
 .wb-node-card {
   position: absolute;
   width: 220px;
@@ -2524,6 +2657,7 @@ math-virtual-keyboard,
   text-align: left;
   cursor: grab;
   z-index: 2;
+  overflow: visible;
 }
 
 .wb-node-card[data-collapsed='true'] {
@@ -2560,6 +2694,24 @@ math-virtual-keyboard,
   color: #dff8fb;
   font-size: 12px;
   font-weight: 700;
+}
+
+.wb-remote-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  max-width: 120px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: rgba(12, 18, 24, 0.94);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .wb-technique-help {
@@ -2600,6 +2752,7 @@ math-virtual-keyboard,
   font-size: 15px;
   font-weight: 700;
   margin-bottom: 8px;
+  padding-right: 84px;
 }
 
 .wb-node-card[data-collapsed='true'] .wb-node-title {
@@ -2630,6 +2783,16 @@ math-virtual-keyboard,
   display: flex;
   width: 100%;
   margin: 6px 0;
+}
+
+.wb-editor-presence {
+  padding: 10px;
+  border: 1px solid #2f4654;
+  border-radius: 12px;
+  background: rgba(83, 209, 240, 0.08);
+  color: #dff8fb;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .wb-node-rich-content .rt-img-inner {

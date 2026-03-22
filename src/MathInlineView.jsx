@@ -1,5 +1,6 @@
 import { NodeViewWrapper } from '@tiptap/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 
@@ -59,7 +60,6 @@ export default function MathInlineView({ node, updateAttributes }) {
   const hostRef = useRef(null)
   const latestLatexRef = useRef(latex)
   const draftLatexRef = useRef(latex)
-  const pendingSaveRef = useRef(null)
 
   useEffect(() => {
     latestLatexRef.current = latex
@@ -120,26 +120,37 @@ export default function MathInlineView({ node, updateAttributes }) {
     }
   }, [open])
 
-  const closeModal = useCallback((save) => {
+  const closeModal = useCallback(() => {
     const mf = mfRef.current
-
-    if (save) {
-      const fallback = draftLatexRef.current || latestLatexRef.current || latex
-      pendingSaveRef.current = readLatexSafely(mf, fallback) || fallback
-    }
 
     try {
       hideVirtualKeyboardSafely(mf)
     } finally {
       setOpen(false)
     }
-  }, [latex])
+  }, [])
 
   const handleModalAction = useCallback((event, shouldSave) => {
     event.preventDefault()
     event.stopPropagation()
-    closeModal(shouldSave)
-  }, [closeModal])
+
+    if (shouldSave) {
+      const mf = mfRef.current
+      const fallback = draftLatexRef.current || latestLatexRef.current || latex
+      const valueToSave = readLatexSafely(mf, fallback) || fallback
+
+      try {
+        updateAttributes({ latex: valueToSave })
+        latestLatexRef.current = valueToSave
+        draftLatexRef.current = valueToSave
+      } catch (error) {
+        console.error('Could not save math expression:', error)
+        return
+      }
+    }
+
+    closeModal()
+  }, [closeModal, latex, updateAttributes])
 
   useEffect(() => {
     if (!open) return
@@ -147,7 +158,7 @@ export default function MathInlineView({ node, updateAttributes }) {
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        closeModal(false)
+        closeModal()
       }
     }
 
@@ -155,20 +166,69 @@ export default function MathInlineView({ node, updateAttributes }) {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [open, closeModal])
 
-  useEffect(() => {
-    if (open || pendingSaveRef.current === null) return
+  const modal = open ? (
+    <div
+      className="math-modal-backdrop"
+      onMouseDown={(e) => {
+        e.stopPropagation()
+      }}
+      onClick={(e) => {
+        e.stopPropagation()
+      }}
+    >
+      <div
+        className="math-modal"
+        onMouseDown={(e) => {
+          e.stopPropagation()
+        }}
+        onClick={(e) => {
+          e.stopPropagation()
+        }}
+      >
+        <button
+          type="button"
+          className="math-close"
+          onClick={(e) => handleModalAction(e, false)}
+          aria-label="Close"
+        >
+          X
+        </button>
 
-    const valueToSave = pendingSaveRef.current
-    pendingSaveRef.current = null
+        <div className="math-modal-title">Edit formula</div>
 
-    requestAnimationFrame(() => {
-      try {
-        updateAttributes({ latex: valueToSave || latestLatexRef.current || latex })
-      } catch (error) {
-        console.error('Could not save math expression:', error)
-      }
-    })
-  }, [open, updateAttributes, latex])
+        <div className="math-modal-actions math-modal-actions-top">
+          <button
+            type="button"
+            className="rt-btn"
+            onClick={(e) => handleModalAction(e, true)}
+          >
+            Save
+          </button>
+
+          <button
+            type="button"
+            className="rt-btn"
+            onClick={(e) => handleModalAction(e, false)}
+          >
+            Cancel
+          </button>
+        </div>
+
+        <div
+          ref={mfHostRef}
+          className="mathfield-host"
+          onMouseDown={(e) => {
+            e.stopPropagation()
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+          }}
+        />
+
+        <div className="math-hint">Tip: use the MathLive keypad. Escape closes the editor.</div>
+      </div>
+    </div>
+  ) : null
 
   return (
     <>
@@ -190,90 +250,7 @@ export default function MathInlineView({ node, updateAttributes }) {
         <span ref={hostRef} />
       </NodeViewWrapper>
 
-      {open && (
-        <div
-          className="math-modal-backdrop"
-          onMouseDown={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-          }}
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-          }}
-        >
-          <div
-            className="math-modal"
-            onMouseDown={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-            }}
-            onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-            }}
-          >
-            <button
-              type="button"
-              className="math-close"
-              onPointerDown={(e) => handleModalAction(e, false)}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-              }}
-              onClick={(e) => handleModalAction(e, false)}
-              aria-label="Close"
-            >
-              X
-            </button>
-
-            <div className="math-modal-title">Edit formula</div>
-
-            <div className="math-modal-actions math-modal-actions-top">
-              <button
-                type="button"
-                className="rt-btn"
-                onPointerDown={(e) => handleModalAction(e, true)}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                }}
-                onClick={(e) => handleModalAction(e, true)}
-              >
-                Save
-              </button>
-
-              <button
-                type="button"
-                className="rt-btn"
-                onPointerDown={(e) => handleModalAction(e, false)}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                }}
-                onClick={(e) => handleModalAction(e, false)}
-              >
-                Cancel
-              </button>
-            </div>
-
-            <div
-              ref={mfHostRef}
-              className="mathfield-host"
-              onMouseDown={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-              }}
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-              }}
-            />
-
-            <div className="math-hint">Tip: use the MathLive keypad. Escape closes the editor.</div>
-          </div>
-        </div>
-      )}
+      {typeof document !== 'undefined' ? createPortal(modal, document.body) : modal}
     </>
   )
 }

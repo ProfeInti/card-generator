@@ -5,6 +5,7 @@ import { COMPETITIVE_SECTIONS } from './components/competitiveSections'
 const WhiteboardModeHub = lazy(() => import('./WhiteboardModeHub'))
 const WhiteboardExerciseEditor = lazy(() => import('./WhiteboardExerciseEditor'))
 const WhiteboardWorkspace = lazy(() => import('./WhiteboardWorkspace'))
+const MathDungeonsHub = lazy(() => import('./MathDungeonsHub'))
 
 const CompetitiveExerciseEditor = lazy(() => import('./CompetitiveExerciseEditor'))
 const CompetitiveReviewPanel = lazy(() => import('./CompetitiveReviewPanel'))
@@ -47,14 +48,15 @@ export default function AppWorkspaceRouter({
 }) {
   if (!workspaceTarget) {
     return (
-      <MainMenu
-        session={session}
-        onOpenCreative={() => setWorkspaceTarget('creative')}
-        onOpenCompetitive={() => setWorkspaceTarget('competitive')}
-        onOpenWhiteboard={() => setWorkspaceTarget('whiteboard')}
-        onOpenMultiplayer={() => setWorkspaceTarget('multiplayer')}
-        onLogout={onLogout}
-      />
+        <MainMenu
+          session={session}
+          onOpenCreative={() => setWorkspaceTarget('creative')}
+          onOpenCompetitive={() => setWorkspaceTarget('competitive')}
+          onOpenMathDungeons={() => setWorkspaceTarget('math-dungeons')}
+          onOpenWhiteboard={() => setWorkspaceTarget('whiteboard')}
+          onOpenMultiplayer={() => setWorkspaceTarget('multiplayer')}
+          onLogout={onLogout}
+        />
     )
   }
 
@@ -101,6 +103,16 @@ export default function AppWorkspaceRouter({
         session={session}
         matchId={activeMultiplayerMatchId}
         onBackToLobby={() => setWorkspaceTarget('multiplayer')}
+        onLogout={onLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'math-dungeons') {
+    return withSuspense(
+      <MathDungeonsHub
+        session={session}
+        onBackToMenu={() => setWorkspaceTarget(null)}
         onLogout={onLogout}
       />
     )
@@ -327,6 +339,7 @@ export default function AppWorkspaceRouter({
       session={session}
       onOpenCreative={() => setWorkspaceTarget('creative')}
       onOpenCompetitive={() => setWorkspaceTarget('competitive')}
+      onOpenMathDungeons={() => setWorkspaceTarget('math-dungeons')}
       onOpenWhiteboard={() => setWorkspaceTarget('whiteboard')}
       onOpenMultiplayer={() => setWorkspaceTarget('multiplayer')}
       onLogout={onLogout}

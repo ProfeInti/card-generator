@@ -440,6 +440,9 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
           <div className="saved-title">Techniques Editor</div>
           <div className="saved-empty">Entity type: competitive_technique_proposals</div>
           <div className="saved-empty">Spanish fields are required for compatibility. French fields are optional and can be completed from the language switcher.</div>
+          <div className="saved-empty">A technique should describe a reusable mathematical method, criterion, transformation, or operation, not just one isolated solution.</div>
+          <div className="saved-empty">Keep the wording minimal and precise: as few words as possible, without sacrificing clarity.</div>
+          <div className="saved-empty">When importing or drafting outside the editor, wrap inline math with $...$ so expressions render correctly after conversion.</div>
 
           <label className="field">
             <span>Status</span>
@@ -491,6 +494,9 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
 
           <label className="field">
             <span>Effect description {activeLanguage === 'es' ? '*' : ''}</span>
+            <div className="saved-empty">Define what the technique does, when it applies, and what transformation or conclusion it produces.</div>
+            <div className="saved-empty">Do not use this field only for a worked solution, only for a result, or only for motivational commentary.</div>
+            <div className="saved-empty">Prefer compact formulas and short mathematical indications over long prose.</div>
             <div className="saved-empty">Use "Add Img URL" in the toolbar for graph or diagram references.</div>
             <DescriptionEditor
               value={activeTranslation.effectDescription}
@@ -502,6 +508,8 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
 
           <label className="field">
             <span>Worked example</span>
+            <div className="saved-empty">Use this field to demonstrate the technique on a concrete expression or situation without replacing the technique definition above.</div>
+            <div className="saved-empty">Keep the example short and focused on the key transformation.</div>
             <div className="saved-empty">Supports math and optional image references.</div>
             <DescriptionEditor
               value={activeTranslation.workedExample}

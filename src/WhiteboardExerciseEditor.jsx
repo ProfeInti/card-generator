@@ -249,6 +249,8 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
         <div>
           <h1 className="page-title">Whiteboard Exercise Editor</h1>
           <div className="saved-empty">Topic and title as the minimum identity, structured source metadata, and rich math content to seed the whiteboard.</div>
+          <div className="saved-empty">Keep every field concise: use the fewest words possible while preserving mathematical clarity.</div>
+          <div className="saved-empty">When importing or drafting content outside the editor, wrap inline math with $...$ so equations render correctly after conversion.</div>
         </div>
         <div className="wb-header-actions">
           <button type="button" className="btn" onClick={() => applyRecord(buildEmptyWhiteboardExercise())}>New Draft</button>
@@ -301,6 +303,8 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
 
           <label className="field">
             <span>Problem Statement</span>
+            <div className="saved-empty">Write the exercise statement itself here, not hints, commentary, or partial solution steps.</div>
+            <div className="saved-empty">Be brief and direct. Prefer compact mathematical notation when it communicates the task clearly.</div>
             <DescriptionEditor
               value={form.statement || ''}
               onChange={(value) => setForm((prev) => ({ ...prev, statement: value }))}
@@ -311,6 +315,8 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
 
           <label className="field">
             <span>Official Answer</span>
+            <div className="saved-empty">Store only the official answer or final conclusion expected from the exercise, unless the source explicitly includes a full official solution.</div>
+            <div className="saved-empty">Use the shortest clear mathematical form available.</div>
             <DescriptionEditor
               value={form.officialResult || ''}
               onChange={(value) => setForm((prev) => ({ ...prev, officialResult: value }))}
@@ -322,6 +328,7 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
           <div className="saved-title" style={{ marginTop: 8 }}>Exercise Data</div>
           <div className="saved-empty">Only place facts or data extracted directly from the exercise here: conditions, declared relations, and numeric values literally given.</div>
           <div className="saved-empty">Do not include hints, help, reformulations, inferences, or solution steps.</div>
+          <div className="saved-empty">Each item should be one short atomic fact, value, or relation.</div>
           <div className="saved-empty">Edit one data item at a time and move across the ten available slots.</div>
 
           <div className="wb-data-navigator">
@@ -357,7 +364,7 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
           <label className="field">
             <span>Antiproblem</span>
             <div className="saved-empty">Write only the answer-template statement that responds to the problem, but keep it incomplete so the student can fill in the missing answer.</div>
-            <div className="saved-empty">Example: "The intersection points are..."</div>
+            <div className="saved-empty">Example: "Los puntos de interseccion son..."</div>
             <DescriptionEditor
               value={form.antiproblem || ''}
               onChange={(value) => setForm((prev) => ({ ...prev, antiproblem: value }))}
@@ -377,6 +384,7 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
           <div className="saved-title">Saved Exercises</div>
           <div className="saved-empty">The canonical template uses the `exercises` array and the fields `topic`, `title`, `statement`, `officialResult`, `dataItems`, and `antiproblem`.</div>
           <div className="saved-empty">The importer also tolerates reasonable aliases such as `tema`, `titulo`, `enunciado`, `respuestaOficial`, `datos`, and `antiproblema`, as long as the content is equivalent.</div>
+          <div className="saved-empty">For plain-text JSON imports, use inline LaTeX between $...$ instead of leaving mathematical expressions as ambiguous text.</div>
           <div className="saved-item-actions">
             <button type="button" className="btn" onClick={exportCurrentExercise}>
               Export JSON

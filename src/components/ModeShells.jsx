@@ -19,7 +19,15 @@ const COMPETITIVE_GROUPS = [
   },
 ]
 
-export function MainMenu({ session, onOpenCreative, onOpenCompetitive, onOpenMultiplayer, onOpenWhiteboard, onLogout }) {
+export function MainMenu({
+  session,
+  onOpenCreative,
+  onOpenCompetitive,
+  onOpenMathDungeons,
+  onOpenMultiplayer,
+  onOpenWhiteboard,
+  onLogout,
+}) {
   return (
     <div className="menu-shell">
       <div className="menu-card">
@@ -32,6 +40,7 @@ export function MainMenu({ session, onOpenCreative, onOpenCompetitive, onOpenMul
         <div className="menu-actions">
           <button type="button" className="btn menu-btn" onClick={onOpenCreative}>Creative Mode</button>
           <button type="button" className="btn menu-btn" onClick={onOpenCompetitive}>Competitive Mode</button>
+          <button type="button" className="btn menu-btn" onClick={onOpenMathDungeons}>Math Dungeons</button>
           <button type="button" className="btn menu-btn" onClick={onOpenWhiteboard}>Math Whiteboard</button>
           <button type="button" className="btn menu-btn" onClick={onOpenMultiplayer}>Multiplayer</button>
           <button type="button" className="btn menu-btn" onClick={onLogout}>Log out</button>

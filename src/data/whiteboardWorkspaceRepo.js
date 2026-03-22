@@ -52,6 +52,7 @@ export async function listPublicWhiteboardWorkspaces() {
     .from('whiteboard_workspaces')
     .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
     .eq('visibility', 'public')
+    .is('source_workspace_id', null)
     .order('updated_at', { ascending: false })
 
   if (error) throw error
@@ -79,6 +80,57 @@ export async function getWhiteboardWorkspaceByExercise(ownerUserId, exerciseLoca
 
   if (error) throw error
   return normalizeWorkspaceRow(data)
+}
+
+export async function getRootWhiteboardWorkspaceByExercise(exerciseLocalId) {
+  const { data, error } = await supabase
+    .from('whiteboard_workspaces')
+    .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
+    .eq('exercise_local_id', exerciseLocalId)
+    .is('source_workspace_id', null)
+    .order('created_at', { ascending: true })
+    .limit(1)
+
+  if (error) throw error
+  return normalizeWorkspaceRow(Array.isArray(data) ? data[0] : null)
+}
+
+export async function ensureRootWhiteboardWorkspace({
+  ownerUserId,
+  exerciseLocalId,
+  exerciseTitle,
+  exerciseSnapshot,
+  nodes,
+  links,
+  lastEditorUserId,
+  visibility = 'public',
+}) {
+  const existing = await getRootWhiteboardWorkspaceByExercise(exerciseLocalId)
+  if (existing) return existing
+
+  try {
+    const { data, error } = await supabase
+      .from('whiteboard_workspaces')
+      .insert({
+        owner_user_id: ownerUserId,
+        visibility,
+        source_workspace_id: null,
+        exercise_local_id: exerciseLocalId,
+        exercise_title: exerciseTitle,
+        exercise_snapshot: exerciseSnapshot,
+        nodes: normalizeJsonArray(nodes),
+        links: normalizeJsonArray(links),
+        last_editor_user_id: lastEditorUserId || ownerUserId,
+      })
+      .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
+
+    if (error) throw error
+    return getSingleWorkspaceRow(data, 'No se pudo crear la pizarra raiz del ejercicio.')
+  } catch (error) {
+    const fallback = await getRootWhiteboardWorkspaceByExercise(exerciseLocalId)
+    if (fallback) return fallback
+    throw error
+  }
 }
 
 export async function ensureWhiteboardWorkspace({
@@ -125,7 +177,6 @@ export async function updateWhiteboardWorkspace(workspaceId, ownerUserId, payloa
       last_editor_user_id: payload.lastEditorUserId || ownerUserId,
     })
     .eq('id', workspaceId)
-    .eq('owner_user_id', ownerUserId)
     .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
 
   if (error) throw error
@@ -143,7 +194,7 @@ export async function cloneWhiteboardWorkspace({
   exerciseSnapshot,
   nodes,
   links,
-  visibility = 'public',
+  visibility = 'private',
   lastEditorUserId,
 }) {
   const { data, error } = await supabase

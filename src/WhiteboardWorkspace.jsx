@@ -5,7 +5,7 @@ import { supabase } from './lib/supabase'
 import { listPrivateCompetitiveTechniqueInventory } from './data/competitiveTechniquesRepo'
 import {
   cloneWhiteboardWorkspace,
-  ensureWhiteboardWorkspace,
+  ensureRootWhiteboardWorkspace,
   getWhiteboardWorkspaceById,
   updateWhiteboardWorkspace,
 } from './data/whiteboardWorkspaceRepo'
@@ -41,6 +41,72 @@ const HISTORY_LIMIT = 80
 const MIN_ZOOM_LEVEL = 0.6
 const MAX_ZOOM_LEVEL = 1.8
 const ZOOM_STEP = 0.1
+const COLLABORATOR_COLORS = ['#53d1f0', '#f5c451', '#ef7d57', '#8bd3dd', '#9b8cff', '#73e2a7', '#ff9ecd', '#ffcf70']
+
+function buildRealtimeClientId() {
+  return `wb-client-${crypto.randomUUID ? crypto.randomUUID() : Date.now()}`
+}
+
+function pickCollaboratorColor(seed) {
+  const key = String(seed || '')
+  const hash = key.split('').reduce((acc, char) => ((acc * 31) + char.charCodeAt(0)) >>> 0, 0)
+  return COLLABORATOR_COLORS[hash % COLLABORATOR_COLORS.length]
+}
+
+function buildPresencePayload({
+  session,
+  editorState,
+  dragState,
+  selectedNodeId,
+  selectedLinkId,
+  linkForm,
+  clientId,
+}) {
+  const username = String(session?.username || session?.userId || 'Anonymous').trim()
+  const userId = String(session?.userId || '').trim()
+  const color = pickCollaboratorColor(userId || username)
+  let editingType = 'board'
+  let targetId = ''
+  let activity = 'browsing'
+
+  if (dragState?.nodeId) {
+    editingType = 'node'
+    targetId = dragState.nodeId
+    activity = 'moving'
+  } else if (editorState?.mode === 'node') {
+    editingType = 'node'
+    targetId = editorState.targetId || selectedNodeId || ''
+    activity = 'editing'
+  } else if (editorState?.mode === 'link') {
+    editingType = 'link'
+    targetId = editorState.targetId || selectedLinkId || ''
+    activity = 'editing'
+  } else if (selectedLinkId) {
+    editingType = 'link'
+    targetId = selectedLinkId
+    activity = 'selected'
+  } else if (selectedNodeId) {
+    editingType = 'node'
+    targetId = selectedNodeId
+    activity = 'selected'
+  }
+
+  return {
+    clientId,
+    userId,
+    username,
+    color,
+    editingType,
+    targetId,
+    sourceNodeId: linkForm?.sourceNodeId || '',
+    activity,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function flattenPresenceState(state) {
+  return Object.values(state || {}).flatMap((entries) => (Array.isArray(entries) ? entries : [])).filter(Boolean)
+}
 
 function getNodeBounds(node, allNodes) {
   if (!node) return null
@@ -329,6 +395,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   const [boardError, setBoardError] = useState('')
   const [collaborationStatus, setCollaborationStatus] = useState('')
   const [collaborationError, setCollaborationError] = useState('')
+  const [collaborators, setCollaborators] = useState([])
   const [showOfficialResult, setShowOfficialResult] = useState(false)
   const [historyPast, setHistoryPast] = useState([])
   const [historyFuture, setHistoryFuture] = useState([])
@@ -337,16 +404,44 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
 
   const currentBoardSignatureRef = useRef('')
   const remoteAppliedSignatureRef = useRef('')
+  const lastBroadcastSignatureRef = useRef('')
   const selectedExerciseRef = useRef(null)
   const dragStartSnapshotRef = useRef(null)
   const currentNodesRef = useRef([])
   const currentLinksRef = useRef([])
   const importFileRef = useRef(null)
   const boardCanvasRef = useRef(null)
+  const realtimeChannelRef = useRef(null)
+  const realtimeClientIdRef = useRef(buildRealtimeClientId())
+  const editorStateRef = useRef(editorState)
+  const selectedNodeIdRef = useRef(selectedNodeId)
+  const selectedLinkIdRef = useRef(selectedLinkId)
+  const dragStateRef = useRef(dragState)
+  const linkFormRef = useRef(linkForm)
 
   useEffect(() => {
     selectedExerciseRef.current = selectedExercise
   }, [selectedExercise])
+
+  useEffect(() => {
+    editorStateRef.current = editorState
+  }, [editorState])
+
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId
+  }, [selectedNodeId])
+
+  useEffect(() => {
+    selectedLinkIdRef.current = selectedLinkId
+  }, [selectedLinkId])
+
+  useEffect(() => {
+    dragStateRef.current = dragState
+  }, [dragState])
+
+  useEffect(() => {
+    linkFormRef.current = linkForm
+  }, [linkForm])
 
   useEffect(() => {
     currentBoardSignatureRef.current = serializeBoard(nodes, links)
@@ -412,13 +507,76 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     [nodes, showOfficialResult]
   )
 
-  const isViewingForeignPublicBoard = Boolean(
+  const isWorkspaceOwner = Boolean(
     loadedWorkspace
     && session?.userId
     && loadedWorkspace.owner_user_id
-    && loadedWorkspace.owner_user_id !== session.userId
-    && String(loadedWorkspace.visibility || 'public') === 'public'
+    && loadedWorkspace.owner_user_id === session.userId
   )
+
+  const participantList = useMemo(() => {
+    const ownClientId = realtimeClientIdRef.current
+    return collaborators
+      .map((item) => ({
+        clientId: String(item.clientId || ''),
+        userId: String(item.userId || ''),
+        username: String(item.username || item.userId || 'Anonymous').trim(),
+        color: String(item.color || pickCollaboratorColor(item.userId || item.username)),
+        editingType: String(item.editingType || 'board'),
+        targetId: String(item.targetId || ''),
+        activity: String(item.activity || 'browsing'),
+        isSelf: String(item.clientId || '') === ownClientId,
+      }))
+      .filter((item) => item.userId || item.clientId)
+      .sort((a, b) => {
+        if (a.isSelf && !b.isSelf) return -1
+        if (!a.isSelf && b.isSelf) return 1
+        return a.username.localeCompare(b.username)
+      })
+  }, [collaborators])
+
+  const remoteParticipants = useMemo(
+    () => participantList.filter((item) => !item.isSelf),
+    [participantList]
+  )
+
+  const remoteNodeEditorsById = useMemo(() => (
+    remoteParticipants.reduce((acc, participant) => {
+      if (participant.editingType !== 'node' || !participant.targetId) return acc
+      acc[participant.targetId] = [...(acc[participant.targetId] || []), participant]
+      return acc
+    }, {})
+  ), [remoteParticipants])
+
+  const remoteLinkEditorsById = useMemo(() => (
+    remoteParticipants.reduce((acc, participant) => {
+      if (participant.editingType !== 'link' || !participant.targetId) return acc
+      acc[participant.targetId] = [...(acc[participant.targetId] || []), participant]
+      return acc
+    }, {})
+  ), [remoteParticipants])
+
+  const activeCollaboratorSummary = useMemo(() => {
+    if (!remoteParticipants.length) return ''
+
+    const labels = remoteParticipants
+      .filter((participant) => participant.activity === 'editing' || participant.activity === 'moving')
+      .map((participant) => {
+        if (participant.editingType === 'node') {
+          const node = nodes.find((item) => item.id === participant.targetId)
+          const target = node?.title || getNodeTypeMeta(node?.type || 'fact').label || 'node'
+          return `${participant.username} editing "${target}"`
+        }
+        if (participant.editingType === 'link') {
+          const link = links.find((item) => item.id === participant.targetId)
+          const target = link?.label || 'a link'
+          return `${participant.username} editing "${target}"`
+        }
+        return `${participant.username} on the board`
+      })
+
+    return labels.join(' · ')
+  }, [remoteParticipants, nodes, links])
 
   const getBoardCoordinatesFromClient = useCallback((clientX, clientY) => {
     const canvasElement = boardCanvasRef.current
@@ -429,6 +587,93 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
       y: Math.max(24, (clientY - rect.top + canvasElement.scrollTop) / zoomLevel),
     }
   }, [zoomLevel])
+
+  const publishPresence = useCallback(async () => {
+    const channel = realtimeChannelRef.current
+    if (!channel || !workspaceId || !session?.userId) return
+
+    try {
+      await channel.track(buildPresencePayload({
+        session,
+        editorState: editorStateRef.current,
+        dragState: dragStateRef.current,
+        selectedNodeId: selectedNodeIdRef.current,
+        selectedLinkId: selectedLinkIdRef.current,
+        linkForm: linkFormRef.current,
+        clientId: realtimeClientIdRef.current,
+      }))
+    } catch (error) {
+      console.error('Could not publish whiteboard presence:', error)
+    }
+  }, [session, workspaceId])
+
+  const applyRemoteRealtimeBoardState = useCallback((nextNodes, nextLinks, options = {}) => {
+    const normalizedNodes = Array.isArray(nextNodes) ? nextNodes : []
+    const normalizedLinks = Array.isArray(nextLinks) ? nextLinks : []
+    const signature = serializeBoard(normalizedNodes, normalizedLinks)
+
+    remoteAppliedSignatureRef.current = signature
+    currentBoardSignatureRef.current = signature
+    lastBroadcastSignatureRef.current = signature
+    currentNodesRef.current = normalizedNodes
+    currentLinksRef.current = normalizedLinks
+
+    setNodes(normalizedNodes)
+    setLinks(normalizedLinks)
+    setHistoryPast([])
+    setHistoryFuture([])
+    setSelectedNodeId((prev) => (
+      normalizedNodes.some((node) => node.id === prev)
+        ? prev
+        : (normalizedNodes[0]?.id || '')
+    ))
+    setSelectedNodeIds((prev) => {
+      const preserved = prev.filter((nodeId) => normalizedNodes.some((node) => node.id === nodeId))
+      if (preserved.length) return preserved
+      return normalizedNodes[0]?.id ? [normalizedNodes[0].id] : []
+    })
+    setSelectedLinkId((prev) => (
+      normalizedLinks.some((link) => link.id === prev) ? prev : ''
+    ))
+    setLinkForm((prev) => ({
+      ...prev,
+      sourceNodeId: normalizedNodes.some((node) => node.id === prev.sourceNodeId) ? prev.sourceNodeId : '',
+      targetNodeId: normalizedNodes.some((node) => node.id === prev.targetNodeId) ? prev.targetNodeId : '',
+    }))
+    setEditorState((prev) => {
+      if (!prev.mode) return prev
+      if (prev.mode === 'node' && normalizedNodes.some((node) => node.id === prev.targetId)) return prev
+      if (prev.mode === 'link' && (!prev.targetId || normalizedLinks.some((link) => link.id === prev.targetId))) return prev
+      return buildEditorState()
+    })
+
+    if (options.exercise) {
+      setSelectedExercise(options.exercise)
+      setExerciseId(options.exercise.id || '')
+      selectedExerciseRef.current = options.exercise
+    }
+
+    if (options.workspaceId) {
+      setWorkspaceId(options.workspaceId)
+      setActiveWhiteboardWorkspaceId(options.workspaceId)
+    }
+
+    if (options.workspaceRow) {
+      setLoadedWorkspace(options.workspaceRow)
+    } else {
+      setLoadedWorkspace((prev) => (
+        prev
+          ? {
+              ...prev,
+              nodes: normalizedNodes,
+              links: normalizedLinks,
+              last_editor_user_id: options.lastEditorUserId || prev.last_editor_user_id,
+              exercise_snapshot: options.exercise || prev.exercise_snapshot || null,
+            }
+          : prev
+      ))
+    }
+  }, [])
 
   const commitHistoryEntry = (snapshot) => {
     setHistoryPast((prev) => [...prev, snapshot].slice(-HISTORY_LIMIT))
@@ -507,6 +752,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     setHistoryFuture([])
     currentBoardSignatureRef.current = signature
     remoteAppliedSignatureRef.current = signature
+    lastBroadcastSignatureRef.current = signature
   }
 
   const loadLocalExercise = (nextExercise) => {
@@ -553,8 +799,9 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     const localStoredWorkspace = getStoredWorkspace(nextExercise.id)
     const boardState = resolveBoardState(nextExercise, localStoredWorkspace)
 
-    const remoteWorkspace = await ensureWhiteboardWorkspace({
+    const remoteWorkspace = await ensureRootWhiteboardWorkspace({
       ownerUserId: session.userId,
+      visibility: 'public',
       exerciseLocalId: nextExercise.id,
       exerciseTitle: nextExercise.title || 'Math Whiteboard',
       exerciseSnapshot: nextExercise,
@@ -699,7 +946,10 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   }, [session?.userId])
 
   useEffect(() => {
-    if (!workspaceId || !session?.userId) return undefined
+    if (!workspaceId || !session?.userId) {
+      setCollaborators([])
+      return undefined
+    }
 
     const refreshFromRealtime = async () => {
       try {
@@ -716,27 +966,99 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
         if (nextSignature === currentBoardSignatureRef.current) return
 
         saveWorkspace(snapshot.id || remoteWorkspace.exercise_local_id, boardState)
-        setLoadedWorkspace(remoteWorkspace)
-        applyBoardState(snapshot, boardState.nodes, boardState.links, remoteWorkspace.id)
+        applyRemoteRealtimeBoardState(boardState.nodes, boardState.links, {
+          exercise: snapshot,
+          workspaceId: remoteWorkspace.id,
+          workspaceRow: remoteWorkspace,
+          lastEditorUserId: remoteWorkspace.last_editor_user_id || '',
+        })
         setCollaborationStatus('Collaborative changes received in real time.')
+        setCollaborationError('')
       } catch (error) {
         setCollaborationError(error?.message || 'Could not refresh the collaborative whiteboard.')
       }
     }
 
     const channel = supabase
-      .channel(`wb-workspace-${workspaceId}`)
+      .channel(`wb-workspace-${workspaceId}`, {
+        config: {
+          presence: {
+            key: `${session.userId}:${realtimeClientIdRef.current}`,
+          },
+          broadcast: {
+            self: false,
+          },
+        },
+      })
+      .on('presence', { event: 'sync' }, () => {
+        setCollaborators(flattenPresenceState(channel.presenceState()))
+      })
+      .on('broadcast', { event: 'board-sync' }, ({ payload }) => {
+        const nextNodes = Array.isArray(payload?.nodes) ? payload.nodes : []
+        const nextLinks = Array.isArray(payload?.links) ? payload.links : []
+        const nextSignature = serializeBoard(nextNodes, nextLinks)
+
+        if (!payload || payload.clientId === realtimeClientIdRef.current) return
+        if (nextSignature === currentBoardSignatureRef.current) return
+
+        const nextExercise = payload.exerciseSnapshot && typeof payload.exerciseSnapshot === 'object'
+          ? payload.exerciseSnapshot
+          : selectedExerciseRef.current
+
+        if (nextExercise?.id) {
+          saveWorkspace(nextExercise.id, { nodes: nextNodes, links: nextLinks })
+        }
+
+        applyRemoteRealtimeBoardState(nextNodes, nextLinks, {
+          exercise: nextExercise,
+          workspaceId,
+          lastEditorUserId: payload.userId || '',
+        })
+        setCollaborationStatus(`Live update received from ${payload.username || 'another collaborator'}.`)
+        setCollaborationError('')
+      })
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'whiteboard_workspaces', filter: `id=eq.${workspaceId}` },
         refreshFromRealtime
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          realtimeChannelRef.current = channel
+          publishPresence()
+        }
+      })
+
+    realtimeChannelRef.current = channel
 
     return () => {
+      if (realtimeChannelRef.current === channel) {
+        realtimeChannelRef.current = null
+      }
+      setCollaborators([])
       supabase.removeChannel(channel)
     }
-  }, [workspaceId, session?.userId])
+  }, [workspaceId, session, applyRemoteRealtimeBoardState, publishPresence])
+
+  useEffect(() => {
+    if (!workspaceId || !session?.userId) return undefined
+
+    const timerId = window.setTimeout(() => {
+      publishPresence()
+    }, 80)
+
+    return () => window.clearTimeout(timerId)
+  }, [
+    workspaceId,
+    session?.userId,
+    session?.username,
+    editorState,
+    selectedNodeId,
+    selectedLinkId,
+    dragState,
+    linkForm.sourceNodeId,
+    publishPresence,
+  ])
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -761,24 +1083,58 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     if (!selectedExercise?.id) return
 
     saveWorkspace(selectedExercise.id, { nodes, links })
+  }, [selectedExercise?.id, nodes, links])
 
-    if (!workspaceId || !session?.userId) return
+  useEffect(() => {
+    if (!selectedExercise?.id || !workspaceId || !session?.userId) return undefined
+
+    const nextSignature = serializeBoard(nodes, links)
+    if (nextSignature === remoteAppliedSignatureRef.current) return undefined
+    if (nextSignature === lastBroadcastSignatureRef.current) return undefined
+
+    const timerId = window.setTimeout(async () => {
+      const channel = realtimeChannelRef.current
+      if (!channel) return
+
+      try {
+        await channel.send({
+          type: 'broadcast',
+          event: 'board-sync',
+          payload: {
+            clientId: realtimeClientIdRef.current,
+            userId: session.userId,
+            username: session.username || session.userId,
+            workspaceId,
+            exerciseSnapshot: selectedExercise,
+            nodes,
+            links,
+            sentAt: new Date().toISOString(),
+          },
+        })
+        lastBroadcastSignatureRef.current = nextSignature
+      } catch (error) {
+        console.error('Could not broadcast whiteboard changes:', error)
+      }
+    }, 120)
+
+    return () => window.clearTimeout(timerId)
+  }, [
+    nodes,
+    links,
+    selectedExercise,
+    workspaceId,
+    session?.userId,
+    session?.username,
+  ])
+
+  useEffect(() => {
+    if (!selectedExercise?.id || !workspaceId || !session?.userId) return undefined
 
     const nextSignature = serializeBoard(nodes, links)
     if (nextSignature === remoteAppliedSignatureRef.current) return
 
     const timerId = window.setTimeout(async () => {
       try {
-        if (isViewingForeignPublicBoard) {
-          const clonedWorkspace = await forkForeignWorkspaceForEditing(nodes, links)
-          if (clonedWorkspace) {
-            remoteAppliedSignatureRef.current = nextSignature
-            setCollaborationStatus('Changes were saved to your own copy of this public whiteboard.')
-            setCollaborationError('')
-            return
-          }
-        }
-
         const updatedWorkspace = await updateWhiteboardWorkspace(workspaceId, session.userId, {
           exerciseTitle: selectedExercise.title || 'Math Whiteboard',
           exerciseSnapshot: selectedExercise,
@@ -804,7 +1160,6 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     workspaceId,
     session?.userId,
     loadedWorkspace,
-    isViewingForeignPublicBoard,
   ])
 
   const updateSelectedNode = (key, value) => {
@@ -1058,9 +1413,8 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
       })
 
       if (session?.userId) {
-        const clonedWorkspace = await cloneWhiteboardWorkspace({
+        const clonedWorkspace = await ensureRootWhiteboardWorkspace({
           ownerUserId: session.userId,
-          sourceWorkspaceId: imported.sourceWorkspaceId || null,
           exerciseLocalId: savedExercise.id,
           exerciseTitle: imported.title || savedExercise.title || 'Math Whiteboard',
           exerciseSnapshot: { ...savedExercise },
@@ -1102,54 +1456,45 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
         exerciseSnapshot: { ...savedExercise },
         nodes,
         links,
-        visibility: 'public',
+        visibility: 'private',
         lastEditorUserId: session.userId,
       })
+      setExercises(listWhiteboardExercises())
       setLoadedWorkspace(clonedWorkspace)
       setActiveWhiteboardExerciseId(savedExercise.id)
       setActiveWhiteboardWorkspaceId(clonedWorkspace.id)
-      await openExercise(savedExercise.id)
+      applyBoardState(savedExercise, nodes, links, clonedWorkspace.id)
       setCollaborationStatus('A new personal copy of this public whiteboard was saved to your account.')
     } catch (error) {
       setCollaborationError(error?.message || 'Could not save your copy of this whiteboard.')
     }
   }
 
-  const forkForeignWorkspaceForEditing = async (currentNodes, currentLinks) => {
-    if (!session?.userId || !selectedExercise || !isViewingForeignPublicBoard) return null
+  const toggleWorkspaceVisibility = async () => {
+    if (!session?.userId || !workspaceId || !loadedWorkspace || !isWorkspaceOwner) return
 
-    const savedExercise = saveWhiteboardExercise({
-      ...buildEmptyWhiteboardExercise(),
-      ...selectedExercise,
-      id: null,
-    })
+    const nextVisibility = String(loadedWorkspace.visibility || 'public') === 'public' ? 'private' : 'public'
 
-    saveWorkspace(savedExercise.id, {
-      nodes: currentNodes,
-      links: currentLinks,
-    })
+    try {
+      const updatedWorkspace = await updateWhiteboardWorkspace(workspaceId, session.userId, {
+        exerciseTitle: selectedExercise?.title || loadedWorkspace.exercise_title || 'Math Whiteboard',
+        exerciseSnapshot: selectedExercise || loadedWorkspace.exercise_snapshot || null,
+        nodes,
+        links,
+        visibility: nextVisibility,
+        lastEditorUserId: session.userId,
+      })
 
-    const clonedWorkspace = await cloneWhiteboardWorkspace({
-      ownerUserId: session.userId,
-      sourceWorkspaceId: loadedWorkspace?.id || null,
-      exerciseLocalId: savedExercise.id,
-      exerciseTitle: savedExercise.title || 'Math Whiteboard',
-      exerciseSnapshot: { ...savedExercise },
-      nodes: currentNodes,
-      links: currentLinks,
-      visibility: 'public',
-      lastEditorUserId: session.userId,
-    })
-
-    setExercises(listWhiteboardExercises())
-    setSelectedExercise(savedExercise)
-    setExerciseId(savedExercise.id)
-    setWorkspaceId(clonedWorkspace.id)
-    setLoadedWorkspace(clonedWorkspace)
-    setActiveWhiteboardExerciseId(savedExercise.id)
-    setActiveWhiteboardWorkspaceId(clonedWorkspace.id)
-
-    return clonedWorkspace
+      setLoadedWorkspace(updatedWorkspace)
+      setCollaborationStatus(
+        nextVisibility === 'public'
+          ? 'Whiteboard is now public and visible to other users.'
+          : 'Whiteboard is now private and hidden from other users.'
+      )
+      setCollaborationError('')
+    } catch (error) {
+      setCollaborationError(error?.message || 'Could not update the whiteboard visibility.')
+    }
   }
 
   const openExercise = async (nextExerciseId) => {
@@ -1305,6 +1650,32 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
         <div>
           <h1 className="page-title">{selectedExercise.title || 'Math Whiteboard'}</h1>
           <div className="saved-empty">Right-click empty space to add or paste nodes. Use Shift + click to select multiple nodes and group them. Use Ctrl/Cmd + Z to undo and Ctrl/Cmd + Y to redo.</div>
+          {loadedWorkspace && (
+            <div className="saved-item-tags">
+              {(loadedWorkspace.visibility || 'public') === 'public' ? 'Public whiteboard' : 'Private whiteboard'}
+              {isWorkspaceOwner ? ' | You are the owner' : ''}
+            </div>
+          )}
+          <div className="wb-collaboration-strip">
+            <div className="wb-collaboration-presence">
+              {participantList.length ? (
+                participantList.map((participant) => (
+                  <div key={participant.clientId || participant.userId} className="wb-collab-chip">
+                    <span
+                      className="wb-collab-dot"
+                      style={{ backgroundColor: participant.color }}
+                    />
+                    <span>{participant.username}{participant.isSelf ? ' (you)' : ''}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="wb-collab-chip is-muted">Solo session</div>
+              )}
+            </div>
+            {activeCollaboratorSummary && (
+              <div className="wb-collaboration-activity">{activeCollaboratorSummary}</div>
+            )}
+          </div>
           {collaborationStatus && <div className="saved-item-tags">{collaborationStatus}</div>}
           {collaborationError && <div className="auth-error">{collaborationError}</div>}
         </div>
@@ -1336,9 +1707,14 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
           <button type="button" className="btn" onClick={() => importFileRef.current?.click()}>
             Import JSON
           </button>
-          {isViewingForeignPublicBoard && (
+          {loadedWorkspace && !isWorkspaceOwner && (
             <button type="button" className="btn" onClick={saveMyCopy}>
               Save My Copy
+            </button>
+          )}
+          {loadedWorkspace && isWorkspaceOwner && (
+            <button type="button" className="btn" onClick={toggleWorkspaceVisibility}>
+              {(loadedWorkspace.visibility || 'public') === 'public' ? 'Make Private' : 'Make Public'}
             </button>
           )}
           <button type="button" className="btn" onClick={undoLastChange} disabled={!historyPast.length}>
@@ -1397,38 +1773,57 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
           >
             <svg className="wb-links-layer" width={boardMetrics.width} height={boardMetrics.height}>
               {renderedLinks.map((link) => (
-                <g
-                  key={link.id}
-                  onClick={() => {
-                    setSelectedLinkId(link.id)
-                    setSelectedNodeId(link.fromNodeId)
-                    setSelectedNodeIds([link.fromNodeId])
-                    setCanvasMenu(buildCanvasMenuState())
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault()
-                    openLinkEditor(link.id, event)
-                  }}
-                >
-                  <path d={link.d} className={`wb-link-line ${selectedLinkId === link.id ? 'is-selected' : ''}`} />
-                  <rect
-                    x={link.labelX - (link.labelWidth / 2)}
-                    y={link.labelY - 12}
-                    width={link.labelWidth}
-                    height={24}
-                    rx={12}
-                    className="wb-link-label-box"
-                  />
-                  <text x={link.labelX} y={link.labelY} className="wb-link-label">
-                    {link.label}
-                  </text>
-                </g>
+                (() => {
+                  const remoteLinkEditors = remoteLinkEditorsById[link.id] || []
+                  const remoteLinkEditor = remoteLinkEditors[0] || null
+
+                  return (
+                    <g
+                      key={link.id}
+                      onClick={() => {
+                        setSelectedLinkId(link.id)
+                        setSelectedNodeId(link.fromNodeId)
+                        setSelectedNodeIds([link.fromNodeId])
+                        setCanvasMenu(buildCanvasMenuState())
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        openLinkEditor(link.id, event)
+                      }}
+                    >
+                      <path
+                        d={link.d}
+                        className={`wb-link-line ${selectedLinkId === link.id ? 'is-selected' : ''}`}
+                        style={remoteLinkEditor ? { stroke: remoteLinkEditor.color, strokeWidth: selectedLinkId === link.id ? 3.5 : 3 } : undefined}
+                      />
+                      <rect
+                        x={link.labelX - (link.labelWidth / 2)}
+                        y={link.labelY - 12}
+                        width={link.labelWidth}
+                        height={24}
+                        rx={12}
+                        className="wb-link-label-box"
+                        style={remoteLinkEditor ? { stroke: remoteLinkEditor.color, strokeWidth: 1.6 } : undefined}
+                      />
+                      <text x={link.labelX} y={link.labelY} className="wb-link-label">
+                        {link.label}
+                      </text>
+                      {remoteLinkEditor && (
+                        <text x={link.labelX} y={link.labelY + 20} className="wb-link-presence" style={{ fill: remoteLinkEditor.color }}>
+                          {remoteLinkEditor.username}
+                        </text>
+                      )}
+                    </g>
+                  )
+                })()
               ))}
             </svg>
 
             {visibleNodes.filter((node) => node.type === 'group').map((node) => {
               const bounds = getNodeBounds(node, nodes)
               const isSelected = node.id === selectedNodeId
+              const remoteNodeEditors = remoteNodeEditorsById[node.id] || []
+              const remoteNodeEditor = remoteNodeEditors[0] || null
               return (
                 <button
                   key={node.id}
@@ -1439,6 +1834,8 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                     top: `${bounds.y}px`,
                     width: `${bounds.width}px`,
                     height: `${bounds.height}px`,
+                    borderColor: remoteNodeEditor ? remoteNodeEditor.color : undefined,
+                    boxShadow: remoteNodeEditor ? `0 0 0 1px ${remoteNodeEditor.color}` : undefined,
                   }}
                   onClick={(event) => {
                     event.stopPropagation()
@@ -1459,6 +1856,11 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                   }}
                 >
                   <span className="wb-group-badge">{node.title || 'Group'}</span>
+                  {remoteNodeEditor && (
+                    <span className="wb-remote-badge" style={{ borderColor: remoteNodeEditor.color, color: remoteNodeEditor.color }}>
+                      {remoteNodeEditor.username}
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -1467,6 +1869,8 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
               const meta = getNodeTypeMeta(node.type)
               const nodeColor = node.customColor || meta.color
               const isSelected = selectedNodeIds.includes(node.id)
+              const remoteNodeEditors = remoteNodeEditorsById[node.id] || []
+              const remoteNodeEditor = remoteNodeEditors[0] || null
 
               return (
                 <button
@@ -1477,7 +1881,9 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                     left: `${node.x}px`,
                     top: `${node.y}px`,
                     borderColor: nodeColor,
-                    boxShadow: isSelected ? `0 0 0 1px ${nodeColor}` : 'none',
+                    boxShadow: remoteNodeEditor
+                      ? `0 0 0 2px ${remoteNodeEditor.color}${isSelected ? `, 0 0 0 3px ${nodeColor}` : ''}`
+                      : (isSelected ? `0 0 0 1px ${nodeColor}` : 'none'),
                   }}
                   data-collapsed={node.collapsed ? 'true' : 'false'}
                   onPointerDown={(event) => {
@@ -1516,6 +1922,11 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                   }}
                 >
                   <div className="wb-node-pill" style={{ backgroundColor: nodeColor }}>{meta.label}</div>
+                  {remoteNodeEditor && (
+                    <div className="wb-remote-badge" style={{ borderColor: remoteNodeEditor.color, color: remoteNodeEditor.color }}>
+                      {remoteNodeEditor.username}
+                    </div>
+                  )}
                   <div className="wb-node-title">{node.title || meta.label}</div>
                   {!node.collapsed && (
                     <div
@@ -1596,6 +2007,14 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
             {editorState.mode === 'node' && nodeEditorTarget && (
               <div className="wb-context-editor-layout">
                 <div className="wb-context-editor-sidebar">
+                  {(remoteNodeEditorsById[nodeEditorTarget.id] || []).length > 0 && (
+                    <div
+                      className="wb-editor-presence"
+                      style={{ borderColor: remoteNodeEditorsById[nodeEditorTarget.id][0].color }}
+                    >
+                      {remoteNodeEditorsById[nodeEditorTarget.id].map((participant) => participant.username).join(', ')} editing this node right now.
+                    </div>
+                  )}
                   <label className="field">
                     <span>Type</span>
                     <select
@@ -1663,6 +2082,14 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
             {editorState.mode === 'link' && (
               <div className="wb-context-editor-layout">
                 <div className="wb-context-editor-sidebar">
+                  {selectedLinkId && (remoteLinkEditorsById[selectedLinkId] || []).length > 0 && (
+                    <div
+                      className="wb-editor-presence"
+                      style={{ borderColor: remoteLinkEditorsById[selectedLinkId][0].color }}
+                    >
+                      {remoteLinkEditorsById[selectedLinkId].map((participant) => participant.username).join(', ')} editing this link right now.
+                    </div>
+                  )}
                   <label className="field">
                     <span>Source Node</span>
                     <select
