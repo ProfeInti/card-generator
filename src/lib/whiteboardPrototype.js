@@ -13,6 +13,7 @@ export const WHITEBOARD_NODE_TYPES = [
   { id: 'result', label: 'Official Answer', color: '#f5c451' },
   { id: 'group', label: 'Group', color: '#8bd3dd' },
   { id: 'fact', label: 'Fact', color: '#c77dff' },
+  { id: 'comment', label: 'Comment', color: '#94a3b8' },
   { id: 'question', label: 'Question', color: '#ff6b9a' },
   { id: 'technique', label: 'Technique', color: '#53d1f0' },
 ]
@@ -225,7 +226,7 @@ export function createWorkspaceNode(type, title, content, x, y, extra = {}) {
     content,
     x,
     y,
-    width: 220,
+    width: 260,
     ...extra,
   }
 }

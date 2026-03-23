@@ -78,6 +78,7 @@ export function buildWhiteboardExercisesTemplateJson() {
       'Use "dataItems" as an array with up to 10 entries.',
       'Each entry in "dataItems" should ideally contain one atomic fact or one directly stated relation so nodes remain reusable inside the whiteboard.',
       'Keep each data item brief and atomic. Prefer one fact, value, or relation per item, stated as compactly as possible without losing precision.',
+      'If the exercise includes explicit consignas, tasks, or inciso prompts such as "calcula", "demuestra", "justifica", "encuentra", or items like "(a)", "(b)", "(c)", those requested prompts must also appear in "dataItems" as explicit entries. Do not omit what the exercise is asking the student to do.',
       '"dataItems" must contain only elements extracted directly from the exercise statement: conditions, premises, declared facts, numeric values, geometric relations, or any other data that the statement literally gives.',
       '"dataItems" must not contain hints, guidance, suggested methods, reformulations, inferred facts, derived intermediate steps, the resolution, or the final answer.',
       '"antiproblem" must contain only the answer-template statement that responds to the problem, but it must remain intentionally incomplete so the student can fill in the actual answer. Example: "Los puntos de interseccion son...".',
@@ -100,6 +101,7 @@ export function buildWhiteboardExercisesTemplateJson() {
         officialResult: '<p><span data-type="math-inline" data-latex="x=-2"></span> y <span data-type="math-inline" data-latex="x=-3"></span></p>',
         dataItems: [
           'La ecuacion dada es $x^2+5x+6=0$.',
+          'Se pide resolver la ecuacion.',
           'Los coeficientes dados por el enunciado son $a=1$, $b=5$ y $c=6$.',
         ],
         antiproblem: 'Las soluciones explicitas son...',
@@ -114,7 +116,7 @@ export function buildWhiteboardExerciseExportJson(exercises) {
     entity: 'whiteboard_exercises',
     version: 1,
     exportedAt: new Date().toISOString(),
-    notes: 'Canonical field names are topic, title, sourceBook, sourceAuthor, sourcePage, sourceSection, sourceReference, statement, officialResult, dataItems, and antiproblem. The title must include the exercise number explicitly. Rich fields accept editor HTML or plain text with inline math wrapped in $...$ so equations render correctly. Write every field with the minimum number of words needed to remain clear, preferring compact formulas and direct mathematical statements over long prose. In dataItems, store only facts or data extracted directly and literally from the exercise statement, ideally one atomic fact per item, written as briefly as possible without losing precision. Do not store hints, guidance, suggested methods, inferred facts, reformulations, derived steps, the resolution, or the final answer there. In officialResult, store only the official answer or expected conclusion. In antiproblem, store only the answer-template statement, keeping it intentionally incomplete so the student can fill in the answer later, for example "Los puntos de interseccion son...".',
+    notes: 'Canonical field names are topic, title, sourceBook, sourceAuthor, sourcePage, sourceSection, sourceReference, statement, officialResult, dataItems, and antiproblem. The title must include the exercise number explicitly. Rich fields accept editor HTML or plain text with inline math wrapped in $...$ so equations render correctly. Write every field with the minimum number of words needed to remain clear, preferring compact formulas and direct mathematical statements over long prose. In dataItems, store only facts or data extracted directly and literally from the exercise statement, ideally one atomic fact per item, written as briefly as possible without losing precision. If the statement includes explicit consignas, tasks, or inciso prompts, include those requested prompts there as explicit items too. Do not store hints, guidance, suggested methods, inferred facts, reformulations, derived steps, the resolution, or the final answer there. In officialResult, store only the official answer or expected conclusion. In antiproblem, store only the answer-template statement, keeping it intentionally incomplete so the student can fill in the answer later, for example "Los puntos de interseccion son...".',
     exercises,
   }
 }

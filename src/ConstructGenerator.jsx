@@ -13,6 +13,7 @@ import {
   updateConstructStep,
 } from './data/competitiveConstructsRepo'
 import { DEFAULT_ART_DATA_URL } from './lib/cardWorkspace'
+import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 const STATUS_OPTIONS = ['draft', 'proposed', 'approved', 'rejected']
@@ -166,6 +167,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
   const [techniqueDetailsOpenByStep, setTechniqueDetailsOpenByStep] = useState({})
   const [techniquePickerOpenByStep, setTechniquePickerOpenByStep] = useState({})
   const [techniqueSearchByStep, setTechniqueSearchByStep] = useState({})
+  const [techniquePickerLanguage, setTechniquePickerLanguage] = useState('es')
 
   const [constructId, setConstructId] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -958,20 +960,21 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
 
                   {visibleSteps.map((step, idx) => {
                     const technique = techniquesById.get(step.techniqueId)
+                    const techniqueTranslation = getTechniqueTranslation(technique, techniquePickerLanguage)
                     const renderedProgress = renderMathInHtml(normalizeMathHtmlInput(step.progressState))
-                    const renderedTechniqueDescription = renderMathInHtml(normalizeMathHtmlInput(technique?.effect_description || ''))
+                    const renderedTechniqueDescription = renderMathInHtml(normalizeMathHtmlInput(techniqueTranslation.effectDescription || ''))
                     const showTechniqueDetails = Boolean(techniqueDetailsOpenByStep[step.localId])
                     const isTechniquePickerOpen = Boolean(techniquePickerOpenByStep[step.localId])
                     const techniqueSearch = String(techniqueSearchByStep[step.localId] || '').trim().toLowerCase()
                     const filteredTechniques = approvedTechniques.filter((item) => {
                       if (!techniqueSearch) return true
-                      return String(item.name || '').toLowerCase().includes(techniqueSearch)
+                      return String(getTechniqueTranslation(item, techniquePickerLanguage).name || '').toLowerCase().includes(techniqueSearch)
                     })
                     const selectableTechniques = technique?.id && !filteredTechniques.some((item) => item.id === technique.id)
                       ? [technique, ...filteredTechniques]
                       : filteredTechniques
                     const selectedTechniqueLabel = technique
-                      ? `${technique.name || 'Untitled technique'} | ${technique.topic || 'No topic'}`
+                      ? `${getTechniqueTranslation(technique, techniquePickerLanguage).name || 'Untitled technique'} | ${technique.topic || 'No topic'}`
                       : 'Select approved technique'
 
                     return (
@@ -980,6 +983,18 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
 
                         <label className="field">
                           <span>Approved technique *</span>
+                          <div className="auth-tabs" style={{ marginBottom: 8 }}>
+                            {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
+                              <button
+                                key={language.id}
+                                type="button"
+                                className={`auth-tab ${techniquePickerLanguage === language.id ? 'active' : ''}`}
+                                onClick={() => setTechniquePickerLanguage(language.id)}
+                              >
+                                {language.label}
+                              </button>
+                            ))}
+                          </div>
                           <div
                             className={`construct-technique-picker ${isTechniquePickerOpen ? 'is-open' : ''}`}
                             onBlur={(event) => {
@@ -995,7 +1010,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                                   className="construct-technique-input"
                                   value={techniqueSearchByStep[step.localId] || ''}
                                   onChange={(e) => updateTechniqueSearch(step.localId, e.target.value)}
-                                  placeholder="Search technique by name"
+                                  placeholder={techniquePickerLanguage === 'fr' ? 'Search technique by French name' : 'Search technique by Spanish name'}
                                 />
                                 <div className="construct-technique-options" role="listbox">
                                   {selectableTechniques.length > 0 ? (
@@ -1007,7 +1022,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                                         onMouseDown={(event) => event.preventDefault()}
                                         onClick={() => selectTechniqueForStep(step.localId, item.id)}
                                       >
-                                        {(item.name || 'Untitled technique') + ' | ' + (item.topic || 'No topic')}
+                                        {(getTechniqueTranslation(item, techniquePickerLanguage).name || 'Untitled technique') + ' | ' + (item.topic || 'No topic')}
                                       </button>
                                     ))
                                   ) : (
@@ -1029,7 +1044,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
 
                         {technique && (
                           <>
-                            <div className="saved-item-tags">Technique selected: {technique.name || 'Untitled'} ({technique.effect_type || 'N/A'})</div>
+                            <div className="saved-item-tags">Technique selected: {techniqueTranslation.name || 'Untitled'} ({technique.effect_type || 'N/A'})</div>
                             <div className="saved-item-actions">
                               <button type="button" className="btn" onClick={() => toggleTechniqueDetails(step.localId)}>
                                 {showTechniqueDetails ? 'Hide More Details' : 'More Details'}
@@ -1048,7 +1063,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                                 <label className="field" style={{ marginTop: 10 }}>
                                   <span>Technique description copy helper</span>
                                   <DescriptionEditor
-                                    value={normalizeMathHtmlInput(technique.effect_description || '')}
+                                    value={normalizeMathHtmlInput(techniqueTranslation.effectDescription || '')}
                                     readOnly
                                     baseFontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}
                                     baseFontSize={18}

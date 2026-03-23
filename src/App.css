@@ -134,6 +134,11 @@ body {
   border-color: #00ff88;
 }
 
+.btn.is-active {
+  border-color: #53d1f0;
+  box-shadow: 0 0 0 1px rgba(83, 209, 240, 0.35);
+}
+
 /* âœ… fila de exportaciÃ³n */
 .export-row {
   display: flex;
@@ -2536,7 +2541,7 @@ math-virtual-keyboard,
 .wb-context-editor {
   position: fixed;
   width: min(920px, calc(100vw - 24px));
-  max-height: min(78vh, 760px);
+  max-height: min(86vh, 860px);
   overflow: auto;
   padding: 14px;
   border: 1px solid #343434;
@@ -2557,7 +2562,7 @@ math-virtual-keyboard,
 
 .wb-context-menu {
   width: auto;
-  max-height: none;
+  min-width: 220px;
   padding: 10px;
 }
 
@@ -2573,6 +2578,8 @@ math-virtual-keyboard,
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .wb-board-canvas {
@@ -2584,6 +2591,22 @@ math-virtual-keyboard,
   background:
     linear-gradient(180deg, rgba(30, 30, 30, 0.95) 0%, rgba(18, 18, 18, 0.98) 100%),
     radial-gradient(circle at top left, rgba(91, 140, 255, 0.08), transparent 32%);
+}
+
+.wb-board-canvas.is-hand-mode,
+.wb-board-canvas.is-hand-mode .wb-board-stage,
+.wb-board-canvas.is-hand-mode .wb-node-card,
+.wb-board-canvas.is-hand-mode .wb-links-layer g,
+.wb-board-canvas.is-hand-mode .wb-group-card {
+  cursor: grab;
+}
+
+.wb-board-canvas.is-panning,
+.wb-board-canvas.is-panning .wb-board-stage,
+.wb-board-canvas.is-panning .wb-node-card,
+.wb-board-canvas.is-panning .wb-links-layer g,
+.wb-board-canvas.is-panning .wb-group-card {
+  cursor: grabbing;
 }
 
 .wb-board-zoom-shell {
@@ -2647,7 +2670,7 @@ math-virtual-keyboard,
 
 .wb-node-card {
   position: absolute;
-  width: 220px;
+  width: 260px;
   min-height: 128px;
   border: 1px solid #343434;
   border-radius: 14px;
@@ -2753,6 +2776,8 @@ math-virtual-keyboard,
   font-weight: 700;
   margin-bottom: 8px;
   padding-right: 84px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .wb-node-card[data-collapsed='true'] .wb-node-title {

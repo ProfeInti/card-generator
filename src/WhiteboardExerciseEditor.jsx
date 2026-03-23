@@ -327,6 +327,7 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
 
           <div className="saved-title" style={{ marginTop: 8 }}>Exercise Data</div>
           <div className="saved-empty">Only place facts or data extracted directly from the exercise here: conditions, declared relations, and numeric values literally given.</div>
+          <div className="saved-empty">If the statement includes consignas or inciso prompts, add those requested tasks here as explicit data items too.</div>
           <div className="saved-empty">Do not include hints, help, reformulations, inferences, or solution steps.</div>
           <div className="saved-empty">Each item should be one short atomic fact, value, or relation.</div>
           <div className="saved-empty">Edit one data item at a time and move across the ten available slots.</div>

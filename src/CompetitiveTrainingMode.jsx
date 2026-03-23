@@ -5,6 +5,7 @@ import {
   listConstructExerciseSummariesByIds,
 } from './data/competitiveConstructsRepo'
 import { listApprovedCompetitiveTechniques } from './data/competitiveTechniquesRepo'
+import { getTechniqueDisplayName } from './lib/competitiveTechniqueLocale'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 const DISTRACTOR_COUNT = 11
@@ -173,7 +174,7 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
       if (!search) return true
 
       const haystack = [
-        technique.name,
+        getTechniqueDisplayName(technique),
         technique.topic,
         technique.subtopic,
         technique.effect_type,
@@ -544,7 +545,7 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
                               className={`training-tech-card ${isSelected ? 'is-selected' : ''} ${isCorrectSelection ? 'is-correct' : ''} ${isWrongSelection ? 'is-wrong' : ''}`}
                               onClick={() => handleTechniquePick(technique.id)}
                             >
-                              <div className="training-tech-name">{technique.name || 'Untitled technique'}</div>
+                              <div className="training-tech-name">{getTechniqueDisplayName(technique)}</div>
                               <div className="training-tech-meta">{technique.topic || 'N/A'} / {technique.subtopic || 'N/A'}</div>
                               <div className="training-tech-meta">Effect: {technique.effect_type || 'N/A'}</div>
                               <div className="training-tech-effect" dangerouslySetInnerHTML={{ __html: renderedEffect }} />
@@ -566,7 +567,7 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
                         return (
                           <div key={step.id} className="collection-toolbar" style={{ marginTop: 10 }}>
                             <div className="saved-title">Step {step.step_order} ({formatPathLabel(step.solution_path)})</div>
-                            <div className="saved-empty">Technique: {technique?.name || 'N/A'}</div>
+                            <div className="saved-empty">Technique: {technique ? getTechniqueDisplayName(technique) : 'N/A'}</div>
                             <div className="rt-editor training-math-box">
                               <div className="card-description" dangerouslySetInnerHTML={{ __html: renderedStepProgress }} />
                             </div>

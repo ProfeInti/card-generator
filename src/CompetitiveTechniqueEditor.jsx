@@ -6,7 +6,7 @@ import {
   listEditableCompetitiveTechniqueProposals,
   updateOwnCompetitiveTechniqueProposal,
 } from './data/competitiveTechniquesRepo'
-import { TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
+import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
 import { hasMeaningfulHtmlContent, normalizeMathHtmlInput } from './lib/mathHtml'
 import {
   buildTechniquesTemplateJson,
@@ -419,8 +419,9 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
             {!loading &&
               records.map((item) => (
                 <div key={item.id} className="saved-item">
-                  <div className="saved-item-name">{item.name || 'Untitled technique'}</div>
-                  {item.name_fr && <div className="saved-item-tags">FR: {item.name_fr}</div>}
+                  <div className="saved-item-name">{getTechniqueTranslation(item, activeLanguage).name || 'Untitled technique'}</div>
+                  <div className="saved-item-tags">ES: {item.name || 'N/A'}</div>
+                  <div className="saved-item-tags">FR: {item.name_fr || item.name || 'N/A'}</div>
                   <div className="saved-item-date">{formatDate(item.updated_at)}</div>
                   <div className="saved-item-tags">Status: {item.status}</div>
                   <div className="saved-item-actions">
@@ -440,9 +441,10 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
           <div className="saved-title">Techniques Editor</div>
           <div className="saved-empty">Entity type: competitive_technique_proposals</div>
           <div className="saved-empty">Spanish fields are required for compatibility. French fields are optional and can be completed from the language switcher.</div>
+          <div className="saved-empty">If you provide French content, it must keep the same level of detail and clarity as the Spanish version.</div>
           <div className="saved-empty">A technique should describe a reusable mathematical method, criterion, transformation, or operation, not just one isolated solution.</div>
           <div className="saved-empty">Keep the wording minimal and precise: as few words as possible, without sacrificing clarity.</div>
-          <div className="saved-empty">When importing or drafting outside the editor, wrap inline math with $...$ so expressions render correctly after conversion.</div>
+          <div className="saved-empty">When importing or drafting outside the editor, every equation or symbolic expression must be wrapped with $...$ so it renders correctly after conversion.</div>
 
           <label className="field">
             <span>Status</span>

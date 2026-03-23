@@ -28,13 +28,14 @@ import {
   setActiveWhiteboardWorkspaceId,
 } from './lib/whiteboardPrototype'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
+import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
 import {
   buildWhiteboardWorkspaceExportJson,
   extractWhiteboardWorkspaceFromJson,
 } from './lib/whiteboardWorkspaceJson'
 
 const EDITOR_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'
-const FIXED_NODE_WIDTH = 220
+const FIXED_NODE_WIDTH = 260
 const FIXED_NODE_HEIGHT = 140
 const GROUP_PADDING = 28
 const HISTORY_LIMIT = 80
@@ -338,6 +339,20 @@ function buildCanvasMenuState() {
   }
 }
 
+function buildPanState() {
+  return {
+    active: false,
+    startClientX: 0,
+    startClientY: 0,
+    startScrollLeft: 0,
+    startScrollTop: 0,
+  }
+}
+
+function clampFloatingPosition(value, min, max) {
+  return Math.max(min, Math.min(value, max))
+}
+
 function clampZoomLevel(value) {
   const numericValue = Number(value)
   if (!Number.isFinite(numericValue)) return 1
@@ -388,6 +403,9 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   const [copiedNode, setCopiedNode] = useState(null)
   const [dragState, setDragState] = useState(null)
   const [linkForm, setLinkForm] = useState(() => buildEmptyLinkForm(''))
+  const [linkTechniquePickerOpen, setLinkTechniquePickerOpen] = useState(false)
+  const [linkTechniqueSearch, setLinkTechniqueSearch] = useState('')
+  const [linkTechniqueLanguage, setLinkTechniqueLanguage] = useState('es')
   const [editorState, setEditorState] = useState(buildEditorState)
   const [canvasMenu, setCanvasMenu] = useState(buildCanvasMenuState)
   const [techniquesError, setTechniquesError] = useState('')
@@ -401,6 +419,8 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   const [historyFuture, setHistoryFuture] = useState([])
   const [loadedWorkspace, setLoadedWorkspace] = useState(null)
   const [zoomLevel, setZoomLevel] = useState(1)
+  const [interactionMode, setInteractionMode] = useState('select')
+  const [panState, setPanState] = useState(buildPanState)
 
   const currentBoardSignatureRef = useRef('')
   const remoteAppliedSignatureRef = useRef('')
@@ -411,6 +431,8 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   const currentLinksRef = useRef([])
   const importFileRef = useRef(null)
   const boardCanvasRef = useRef(null)
+  const editorPanelRef = useRef(null)
+  const canvasMenuRef = useRef(null)
   const realtimeChannelRef = useRef(null)
   const realtimeClientIdRef = useRef(buildRealtimeClientId())
   const editorStateRef = useRef(editorState)
@@ -442,6 +464,13 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   useEffect(() => {
     linkFormRef.current = linkForm
   }, [linkForm])
+
+  useEffect(() => {
+    if (editorState.mode !== 'link') {
+      setLinkTechniquePickerOpen(false)
+      setLinkTechniqueSearch('')
+    }
+  }, [editorState.mode])
 
   useEffect(() => {
     currentBoardSignatureRef.current = serializeBoard(nodes, links)
@@ -477,6 +506,18 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     () => techniques.find((item) => item.id === linkForm.techniqueId) || null,
     [techniques, linkForm.techniqueId]
   )
+
+  const filteredTechniques = useMemo(() => {
+    const search = String(linkTechniqueSearch || '').trim().toLowerCase()
+    if (!search) return techniques
+    return techniques.filter((item) => String(getTechniqueTranslation(item, linkTechniqueLanguage).name || '').toLowerCase().includes(search))
+  }, [techniques, linkTechniqueSearch, linkTechniqueLanguage])
+
+  const selectableLinkTechniques = useMemo(() => (
+    selectedTechnique?.id && !filteredTechniques.some((item) => item.id === selectedTechnique.id)
+      ? [selectedTechnique, ...filteredTechniques]
+      : filteredTechniques
+  ), [filteredTechniques, selectedTechnique])
 
   const boardMetrics = useMemo(() => {
     const maxX = nodes.reduce((acc, node) => {
@@ -587,6 +628,23 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
       y: Math.max(24, (clientY - rect.top + canvasElement.scrollTop) / zoomLevel),
     }
   }, [zoomLevel])
+
+  const startCanvasPan = useCallback((event) => {
+    const canvasElement = boardCanvasRef.current
+    if (!canvasElement) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    setEditorState(buildEditorState())
+    setCanvasMenu(buildCanvasMenuState())
+    setPanState({
+      active: true,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startScrollLeft: canvasElement.scrollLeft,
+      startScrollTop: canvasElement.scrollTop,
+    })
+  }, [])
 
   const publishPresence = useCallback(async () => {
     const channel = realtimeChannelRef.current
@@ -917,7 +975,38 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   }, [dragState, getBoardCoordinatesFromClient])
 
   useEffect(() => {
-    const closeFloatingUi = () => {
+    if (!panState.active) return
+
+    const handlePointerMove = (event) => {
+      const canvasElement = boardCanvasRef.current
+      if (!canvasElement) return
+      const deltaX = event.clientX - panState.startClientX
+      const deltaY = event.clientY - panState.startClientY
+      canvasElement.scrollLeft = panState.startScrollLeft - deltaX
+      canvasElement.scrollTop = panState.startScrollTop - deltaY
+    }
+
+    const handlePointerUp = () => {
+      setPanState(buildPanState())
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [panState])
+
+  useEffect(() => {
+    const closeFloatingUi = (event) => {
+      const target = event?.target
+      if (target instanceof Node) {
+        if (editorPanelRef.current?.contains(target) || canvasMenuRef.current?.contains(target)) {
+          return
+        }
+      }
       setEditorState(buildEditorState())
       setCanvasMenu(buildCanvasMenuState())
     }
@@ -1282,6 +1371,8 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
       label: targetLink.label || '',
       justification: targetLink.justification || '',
     })
+    setLinkTechniquePickerOpen(false)
+    setLinkTechniqueSearch('')
     setEditorState({
       mode: 'link',
       targetId: targetLink.id,
@@ -1298,6 +1389,8 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     setSelectedNodeIds([sourceNode.id])
     setSelectedLinkId('')
     setLinkForm(buildEmptyLinkForm(sourceNode.id))
+    setLinkTechniquePickerOpen(false)
+    setLinkTechniqueSearch('')
     setEditorState({
       mode: 'link',
       targetId: '',
@@ -1631,14 +1724,23 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
 
   const nodeEditorTarget = nodes.find((node) => node.id === editorState.targetId) || null
 
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280
+  const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800
+  const editorLeft = clampFloatingPosition(editorState.x, 12, Math.max(12, viewportWidth - 940))
+  const editorTop = clampFloatingPosition(editorState.y, 12, Math.max(12, viewportHeight - 280))
+  const canvasMenuLeft = clampFloatingPosition(canvasMenu.x, 12, Math.max(12, viewportWidth - 260))
+  const canvasMenuTop = clampFloatingPosition(canvasMenu.y, 12, Math.max(12, viewportHeight - 180))
+
   const editorStyle = {
-    left: `${Math.min(editorState.x, window.innerWidth - 420)}px`,
-    top: `${Math.min(editorState.y, window.innerHeight - 520)}px`,
+    left: `${editorLeft}px`,
+    top: `${editorTop}px`,
+    maxHeight: `${Math.max(280, viewportHeight - editorTop - 16)}px`,
   }
 
   const canvasMenuStyle = {
-    left: `${Math.min(canvasMenu.x, window.innerWidth - 220)}px`,
-    top: `${Math.min(canvasMenu.y, window.innerHeight - 120)}px`,
+    left: `${canvasMenuLeft}px`,
+    top: `${canvasMenuTop}px`,
+    maxHeight: `${Math.max(140, viewportHeight - canvasMenuTop - 16)}px`,
   }
 
   const zoomPercent = Math.round(zoomLevel * 100)
@@ -1740,6 +1842,13 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
           <div className="wb-zoom-controls" role="group" aria-label="Whiteboard zoom controls">
             <button
               type="button"
+              className={`btn ${interactionMode === 'hand' ? 'is-active' : ''}`}
+              onClick={() => setInteractionMode((prev) => (prev === 'hand' ? 'select' : 'hand'))}
+            >
+              {interactionMode === 'hand' ? 'Hand On' : 'Hand'}
+            </button>
+            <button
+              type="button"
               className="btn"
               onClick={() => setZoomLevel((prev) => clampZoomLevel(prev - ZOOM_STEP))}
               disabled={zoomLevel <= MIN_ZOOM_LEVEL}
@@ -1800,11 +1909,25 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
       </div>
 
       <div className="wb-fullscreen-board">
-        <div ref={boardCanvasRef} className="wb-board-canvas wb-board-canvas-full">
+        <div
+          ref={boardCanvasRef}
+          className={`wb-board-canvas wb-board-canvas-full ${interactionMode === 'hand' ? 'is-hand-mode' : ''} ${panState.active ? 'is-panning' : ''}`}
+          onMouseDown={(event) => {
+            if (event.button === 1) {
+              event.preventDefault()
+            }
+          }}
+        >
           <div className="wb-board-zoom-shell" style={zoomedBoardStyle}>
             <div
             className="wb-board-stage"
             style={boardStageStyle}
+            onPointerDown={(event) => {
+              const shouldPanWithMiddleClick = event.button === 1
+              const shouldPanWithHandTool = interactionMode === 'hand' && event.button === 0
+              if (!shouldPanWithMiddleClick && !shouldPanWithHandTool) return
+              startCanvasPan(event)
+            }}
             onClick={() => {
               setEditorState(buildEditorState())
               setCanvasMenu(buildCanvasMenuState())
@@ -1837,14 +1960,16 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                   return (
                     <g
                       key={link.id}
-                      onClick={() => {
-                        setSelectedLinkId(link.id)
-                        setSelectedNodeId(link.fromNodeId)
-                        setSelectedNodeIds([link.fromNodeId])
+                    onClick={() => {
+                      if (interactionMode === 'hand') return
+                      setSelectedLinkId(link.id)
+                      setSelectedNodeId(link.fromNodeId)
+                      setSelectedNodeIds([link.fromNodeId])
                         setCanvasMenu(buildCanvasMenuState())
                       }}
                       onContextMenu={(event) => {
                         event.preventDefault()
+                        if (interactionMode === 'hand') return
                         openLinkEditor(link.id, event)
                       }}
                     >
@@ -1944,6 +2069,12 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                   }}
                   data-collapsed={node.collapsed ? 'true' : 'false'}
                   onPointerDown={(event) => {
+                    const shouldPanWithMiddleClick = event.button === 1
+                    const shouldPanWithHandTool = interactionMode === 'hand' && event.button === 0
+                    if (shouldPanWithMiddleClick || shouldPanWithHandTool) {
+                      startCanvasPan(event)
+                      return
+                    }
                     event.stopPropagation()
                     setSelectedNodeId(node.id)
                     setSelectedNodeIds((prev) => (
@@ -1961,6 +2092,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                     })
                   }}
                   onClick={(event) => {
+                    if (interactionMode === 'hand') return
                     event.stopPropagation()
                     setSelectedNodeId(node.id)
                     setSelectedNodeIds((prev) => {
@@ -1974,6 +2106,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                   }}
                   onContextMenu={(event) => {
                     event.preventDefault()
+                    if (interactionMode === 'hand') return
                     event.stopPropagation()
                     openNodeMenu(node.id, event)
                   }}
@@ -1999,7 +2132,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
         </div>
 
         {canvasMenu.open && (
-          <div className="wb-context-editor wb-context-menu" style={canvasMenuStyle}>
+          <div ref={canvasMenuRef} className="wb-context-editor wb-context-menu" style={canvasMenuStyle}>
             {canvasMenu.mode === 'canvas' && (
               <>
                 <button type="button" className="btn" onClick={addNodeFromCanvasMenu}>Add Node</button>
@@ -2055,7 +2188,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
         )}
 
         {editorState.mode && (
-          <div className="wb-context-editor" style={editorStyle}>
+          <div ref={editorPanelRef} className="wb-context-editor" style={editorStyle}>
             <div className="wb-context-editor-top">
               <div className="saved-title">{editorState.mode === 'node' ? 'Edit Node' : 'Edit Link'}</div>
               <button type="button" className="btn" onClick={() => setEditorState(buildEditorState())}>Close</button>
@@ -2090,6 +2223,8 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                     <input
                       value={nodeEditorTarget.title || ''}
                       onChange={(e) => updateSelectedNode('title', e.target.value)}
+                      maxLength={180}
+                      placeholder="Use a longer descriptive node title if needed"
                     />
                   </label>
 
@@ -2175,16 +2310,81 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
 
                   <label className="field">
                     <span>Optional Account Technique</span>
-                    <select
-                      value={linkForm.techniqueId}
-                      onChange={(e) => setLinkForm((prev) => ({ ...prev, techniqueId: e.target.value }))}
+                    <div
+                      className={`construct-technique-picker ${linkTechniquePickerOpen ? 'is-open' : ''}`}
+                      onBlur={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) {
+                          setLinkTechniquePickerOpen(false)
+                        }
+                      }}
                     >
-                      <option value="">No predefined technique</option>
-                      {techniques.map((technique) => (
-                        <option key={technique.id} value={technique.id}>{technique.name}</option>
-                      ))}
-                    </select>
+                      {linkTechniquePickerOpen ? (
+                        <>
+                          <input
+                                  autoFocus
+                                  className="construct-technique-input"
+                                  value={linkTechniqueSearch}
+                                  onChange={(e) => setLinkTechniqueSearch(e.target.value)}
+                                  placeholder={linkTechniqueLanguage === 'fr' ? 'Search technique by French name' : 'Search technique by Spanish name'}
+                                />
+                                <div className="construct-technique-options" role="listbox">
+                            <button
+                              type="button"
+                              className={`construct-technique-option ${!linkForm.techniqueId ? 'is-selected' : ''}`}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                setLinkForm((prev) => ({ ...prev, techniqueId: '' }))
+                                setLinkTechniquePickerOpen(false)
+                              }}
+                            >
+                              No predefined technique
+                            </button>
+                            {selectableLinkTechniques.length > 0 ? (
+                              selectableLinkTechniques.map((technique) => (
+                                <button
+                                  key={technique.id}
+                                  type="button"
+                                  className={`construct-technique-option ${technique.id === linkForm.techniqueId ? 'is-selected' : ''}`}
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    setLinkForm((prev) => ({ ...prev, techniqueId: technique.id }))
+                                    setLinkTechniquePickerOpen(false)
+                                  }}
+                                >
+                                  {(getTechniqueTranslation(technique, linkTechniqueLanguage).name || 'Untitled technique') + ' | ' + (technique.topic || 'No topic')}
+                                </button>
+                              ))
+                            ) : (
+                              <div className="construct-technique-empty">No techniques match that name.</div>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className={`construct-technique-trigger ${linkForm.techniqueId ? 'has-value' : ''}`}
+                          onClick={() => setLinkTechniquePickerOpen(true)}
+                        >
+                          {selectedTechnique
+                            ? `${getTechniqueTranslation(selectedTechnique, linkTechniqueLanguage).name || 'Untitled technique'} | ${selectedTechnique.topic || 'No topic'}`
+                            : 'No predefined technique'}
+                        </button>
+                      )}
+                    </div>
                   </label>
+
+                  <div className="auth-tabs" style={{ marginBottom: 8 }}>
+                    {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
+                      <button
+                        key={language.id}
+                        type="button"
+                        className={`auth-tab ${linkTechniqueLanguage === language.id ? 'active' : ''}`}
+                        onClick={() => setLinkTechniqueLanguage(language.id)}
+                      >
+                        {language.label}
+                      </button>
+                    ))}
+                  </div>
 
                   {techniquesError && <div className="saved-empty">{techniquesError}</div>}
                   {!techniquesError && (
@@ -2195,7 +2395,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                       className="wb-technique-help"
                       dangerouslySetInnerHTML={{
                         __html: renderNodeHtml(
-                          selectedTechnique.effect_description
+                          getTechniqueTranslation(selectedTechnique, linkTechniqueLanguage).effectDescription
                           || selectedTechnique.effectDescription
                           || selectedTechnique.summary
                           || ''

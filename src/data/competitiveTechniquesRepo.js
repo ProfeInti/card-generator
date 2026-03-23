@@ -241,6 +241,18 @@ export async function archiveTechniqueCatalogEntryAsTeacher(catalogTechniqueId) 
   return data
 }
 
+export async function updateTechniqueCatalogEntryAsTeacher(catalogTechniqueId, payload) {
+  const { data, error } = await supabase
+    .from('competitive_technique_catalog')
+    .update(payload)
+    .eq('id', catalogTechniqueId)
+    .select(TECHNIQUE_CATALOG_SELECT_FIELDS)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
 export async function addTechniqueCatalogEntryToStudentCollection(studentUserId, catalogTechniqueId, source = 'copied') {
   const { data, error } = await supabase
     .from('competitive_technique_student_collection')

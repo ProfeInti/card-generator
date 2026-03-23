@@ -93,7 +93,8 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
     return items.filter((row) => {
       const search = normalize(nameSearch)
       if (search) {
-        const haystack = [row.name, row.name_fr].map((value) => normalize(value)).join(' ')
+        const primaryName = activeLanguage === 'fr' ? row.name_fr || row.name : row.name || row.name_fr
+        const haystack = [primaryName].map((value) => normalize(value)).join(' ')
         if (!haystack.includes(search)) return false
       }
       if (topicFilter && normalize(row.topic) !== normalize(topicFilter)) return false
@@ -101,7 +102,7 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
       if (effectTypeFilter && normalize(row.effect_type) !== normalize(effectTypeFilter)) return false
       return true
     })
-  }, [items, nameSearch, topicFilter, subtopicFilter, effectTypeFilter])
+  }, [items, nameSearch, topicFilter, subtopicFilter, effectTypeFilter, activeLanguage])
 
   return (
     <div className="page">
@@ -128,13 +129,26 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
         <div className="assets-panel">
           <div className="saved-title">My Approved Techniques</div>
 
+          <div className="auth-tabs" style={{ marginBottom: 12 }}>
+            {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
+              <button
+                key={language.id}
+                type="button"
+                className={`auth-tab ${activeLanguage === language.id ? 'active' : ''}`}
+                onClick={() => setActiveLanguage(language.id)}
+              >
+                {language.label}
+              </button>
+            ))}
+          </div>
+
           <div className="collection-toolbar">
             <label className="field">
               <span>Name</span>
               <input
                 value={nameSearch}
                 onChange={(e) => setNameSearch(e.target.value)}
-                placeholder="Search ES or FR name"
+                placeholder={activeLanguage === 'fr' ? 'Search French name' : 'Search Spanish name'}
               />
             </label>
 
@@ -180,8 +194,9 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
             {!loading && filteredItems.length === 0 && <div className="saved-empty">No techniques in your collection yet.</div>}
             {!loading && filteredItems.map((item) => (
               <div key={item.id} className="saved-item">
-                <div className="saved-item-name">{item.name || 'Untitled technique'}</div>
-                {item.name_fr && <div className="saved-item-tags">FR: {item.name_fr}</div>}
+                <div className="saved-item-name">{getTechniqueTranslation(item, activeLanguage).name || 'Untitled technique'}</div>
+                <div className="saved-item-tags">ES: {item.name || 'N/A'}</div>
+                <div className="saved-item-tags">FR: {item.name_fr || item.name || 'N/A'}</div>
                 <div className="saved-item-date">Added: {formatDate(item.collected_at)}</div>
                 <div className="saved-item-tags">
                   Scope: {item.is_owner_copy ? 'My approved technique' : 'My collection copy'}

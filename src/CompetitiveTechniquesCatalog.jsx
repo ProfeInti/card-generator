@@ -1,13 +1,31 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import DescriptionEditor from './DescriptionEditor'
 import {
   addTechniqueCatalogEntryToStudentCollection,
   archiveTechniqueCatalogEntryAsTeacher,
   deleteTechniqueCatalogEntryAsTeacher,
   listGlobalCompetitiveTechniqueCatalog,
+  updateTechniqueCatalogEntryAsTeacher,
 } from './data/competitiveTechniquesRepo'
 import { listProfileUsernamesByIds } from './data/profilesRepo'
 import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
-import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
+import { hasMeaningfulHtmlContent, normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
+
+const EDITOR_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'
+
+function buildCatalogForm(row) {
+  return {
+    name: String(row?.name || ''),
+    nameFr: String(row?.name_fr || ''),
+    topic: String(row?.topic || ''),
+    subtopic: String(row?.subtopic || ''),
+    effectType: String(row?.effect_type || ''),
+    effectDescription: normalizeMathHtmlInput(row?.effect_description || ''),
+    effectDescriptionFr: normalizeMathHtmlInput(row?.effect_description_fr || ''),
+    workedExample: normalizeMathHtmlInput(row?.worked_example || ''),
+    workedExampleFr: normalizeMathHtmlInput(row?.worked_example_fr || ''),
+  }
+}
 
 function formatDate(value) {
   if (!value) return ''
@@ -29,6 +47,8 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
   const [creatorNamesById, setCreatorNamesById] = useState({})
   const [actionLoading, setActionLoading] = useState(false)
   const [notice, setNotice] = useState('')
+  const [teacherEditLanguage, setTeacherEditLanguage] = useState('es')
+  const [teacherEditForm, setTeacherEditForm] = useState(null)
   const isTeacher = session.role === 'teacher'
 
   const [topicFilter, setTopicFilter] = useState('')
@@ -101,7 +121,8 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
     return items.filter((row) => {
       const search = normalize(nameSearch)
       if (search) {
-        const haystack = [row.name, row.name_fr].map((value) => normalize(value)).join(' ')
+        const primaryName = activeLanguage === 'fr' ? row.name_fr || row.name : row.name || row.name_fr
+        const haystack = [primaryName].map((value) => normalize(value)).join(' ')
         if (!haystack.includes(search)) return false
       }
       if (topicFilter && normalize(row.topic) !== normalize(topicFilter)) return false
@@ -109,7 +130,12 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
       if (effectTypeFilter && normalize(row.effect_type) !== normalize(effectTypeFilter)) return false
       return true
     })
-  }, [items, nameSearch, topicFilter, subtopicFilter, effectTypeFilter])
+  }, [items, nameSearch, topicFilter, subtopicFilter, effectTypeFilter, activeLanguage])
+
+  useEffect(() => {
+    setTeacherEditForm(selected ? buildCatalogForm(selected) : null)
+    setTeacherEditLanguage('es')
+  }, [selectedId, selected])
 
   const handleTeacherDelete = async (technique) => {
     if (!isTeacher || !technique?.catalog_id) return
@@ -166,6 +192,58 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
     }
   }
 
+  const handleTeacherCatalogFieldChange = (key, value) => {
+    setTeacherEditForm((prev) => (
+      prev
+        ? {
+            ...prev,
+            [key]: value,
+          }
+        : prev
+    ))
+  }
+
+  const handleTeacherSave = async () => {
+    if (!isTeacher || !selected?.catalog_id || !teacherEditForm) return
+
+    if (!String(teacherEditForm.name || '').trim()) {
+      setError('Spanish technique name is required.')
+      setNotice('')
+      return
+    }
+
+    if (!hasMeaningfulHtmlContent(teacherEditForm.effectDescription)) {
+      setError('Spanish effect description is required.')
+      setNotice('')
+      return
+    }
+
+    setActionLoading(true)
+    setError('')
+    setNotice('')
+
+    try {
+      await updateTechniqueCatalogEntryAsTeacher(selected.catalog_id, {
+        name: String(teacherEditForm.name || '').trim(),
+        name_fr: String(teacherEditForm.nameFr || '').trim() || null,
+        topic: String(teacherEditForm.topic || '').trim() || null,
+        subtopic: String(teacherEditForm.subtopic || '').trim() || null,
+        effect_type: String(teacherEditForm.effectType || '').trim() || null,
+        effect_description: String(teacherEditForm.effectDescription || '').trim(),
+        effect_description_fr: String(teacherEditForm.effectDescriptionFr || '').trim() || null,
+        worked_example: String(teacherEditForm.workedExample || '').trim() || null,
+        worked_example_fr: String(teacherEditForm.workedExampleFr || '').trim() || null,
+        reviewed_by: session.userId,
+      })
+      await loadItems()
+      setNotice('Technique catalog entry updated.')
+    } catch (err) {
+      setError(err?.message || 'Could not update technique in catalog.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   return (
     <div className="page">
       <div className="session-row">
@@ -191,13 +269,26 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
         <div className="assets-panel">
           <div className="saved-title">Approved Global Catalog</div>
 
+          <div className="auth-tabs" style={{ marginBottom: 12 }}>
+            {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
+              <button
+                key={language.id}
+                type="button"
+                className={`auth-tab ${activeLanguage === language.id ? 'active' : ''}`}
+                onClick={() => setActiveLanguage(language.id)}
+              >
+                {language.label}
+              </button>
+            ))}
+          </div>
+
           <div className="collection-toolbar">
             <label className="field">
               <span>Name</span>
               <input
                 value={nameSearch}
                 onChange={(e) => setNameSearch(e.target.value)}
-                placeholder="Search ES or FR name"
+                placeholder={activeLanguage === 'fr' ? 'Search French name' : 'Search Spanish name'}
               />
             </label>
 
@@ -243,8 +334,9 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
             {!loading && filteredItems.length === 0 && <div className="saved-empty">No approved techniques for current filters.</div>}
             {!loading && filteredItems.map((item) => (
               <div key={item.id} className="saved-item">
-                <div className="saved-item-name">{item.name || 'Untitled technique'}</div>
-                {item.name_fr && <div className="saved-item-tags">FR: {item.name_fr}</div>}
+                <div className="saved-item-name">{getTechniqueTranslation(item, activeLanguage).name || 'Untitled technique'}</div>
+                <div className="saved-item-tags">ES: {item.name || 'N/A'}</div>
+                <div className="saved-item-tags">FR: {item.name_fr || item.name || 'N/A'}</div>
                 <div className="saved-item-date">Updated: {formatDate(item.updated_at)}</div>
                 <div className="saved-item-tags">Creator: {creatorNamesById[item.created_by] || item.created_by || 'Unknown'}</div>
                 <div className="saved-item-tags">Topic: {item.topic || 'N/A'} / {item.subtopic || 'N/A'}</div>
@@ -318,11 +410,79 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
                   {actionLoading ? 'Processing...' : 'Copy to My Collection'}
                 </button>
                 {isTeacher && (
-                  <button type="button" className="btn danger" onClick={() => handleTeacherDelete(selected)} disabled={actionLoading || !selected.has_catalog_entry}>
-                    {actionLoading ? 'Processing...' : 'Delete Technique'}
-                  </button>
+                  <>
+                    <button type="button" className="btn" onClick={handleTeacherSave} disabled={actionLoading || !selected.has_catalog_entry || !teacherEditForm}>
+                      {actionLoading ? 'Processing...' : 'Save Catalog Changes'}
+                    </button>
+                    <button type="button" className="btn danger" onClick={() => handleTeacherDelete(selected)} disabled={actionLoading || !selected.has_catalog_entry}>
+                      {actionLoading ? 'Processing...' : 'Delete Technique'}
+                    </button>
+                  </>
                 )}
               </div>
+
+              {isTeacher && teacherEditForm && selected.has_catalog_entry && (
+                <div className="collection-toolbar" style={{ marginTop: 12 }}>
+                  <div className="saved-title">Teacher Catalog Edit</div>
+                  <div className="saved-empty">Teachers can directly update the approved catalog entry in both languages.</div>
+
+                  <div className="competitive-grid">
+                    <label className="field">
+                      <span>Topic</span>
+                      <input value={teacherEditForm.topic} onChange={(e) => handleTeacherCatalogFieldChange('topic', e.target.value)} />
+                    </label>
+                    <label className="field">
+                      <span>Subtopic</span>
+                      <input value={teacherEditForm.subtopic} onChange={(e) => handleTeacherCatalogFieldChange('subtopic', e.target.value)} />
+                    </label>
+                    <label className="field">
+                      <span>Effect type</span>
+                      <input value={teacherEditForm.effectType} onChange={(e) => handleTeacherCatalogFieldChange('effectType', e.target.value)} />
+                    </label>
+                  </div>
+
+                  <div className="auth-tabs" style={{ marginTop: 8 }}>
+                    {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
+                      <button
+                        key={language.id}
+                        type="button"
+                        className={`auth-tab ${teacherEditLanguage === language.id ? 'active' : ''}`}
+                        onClick={() => setTeacherEditLanguage(language.id)}
+                      >
+                        {language.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label className="field">
+                    <span>Name {teacherEditLanguage === 'es' ? '*' : ''}</span>
+                    <input
+                      value={teacherEditLanguage === 'fr' ? teacherEditForm.nameFr : teacherEditForm.name}
+                      onChange={(e) => handleTeacherCatalogFieldChange(teacherEditLanguage === 'fr' ? 'nameFr' : 'name', e.target.value)}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Effect description {teacherEditLanguage === 'es' ? '*' : ''}</span>
+                    <DescriptionEditor
+                      value={teacherEditLanguage === 'fr' ? teacherEditForm.effectDescriptionFr : teacherEditForm.effectDescription}
+                      onChange={(value) => handleTeacherCatalogFieldChange(teacherEditLanguage === 'fr' ? 'effectDescriptionFr' : 'effectDescription', value)}
+                      baseFontFamily={EDITOR_FONT_FAMILY}
+                      baseFontSize={18}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Worked example</span>
+                    <DescriptionEditor
+                      value={teacherEditLanguage === 'fr' ? teacherEditForm.workedExampleFr : teacherEditForm.workedExample}
+                      onChange={(value) => handleTeacherCatalogFieldChange(teacherEditLanguage === 'fr' ? 'workedExampleFr' : 'workedExample', value)}
+                      baseFontFamily={EDITOR_FONT_FAMILY}
+                      baseFontSize={18}
+                    />
+                  </label>
+                </div>
+              )}
             </>
           )}
 
