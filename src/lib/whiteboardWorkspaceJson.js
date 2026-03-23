@@ -23,6 +23,7 @@ function normalizeNode(node) {
     isOfficial: Boolean(node.isOfficial),
     collapsed: Boolean(node.collapsed),
     customColor: String(node.customColor || '').trim(),
+    techniqueId: String(node.techniqueId || '').trim(),
     memberNodeIds: Array.isArray(node.memberNodeIds) ? node.memberNodeIds.map((item) => String(item || '').trim()).filter(Boolean) : [],
   }
 }
@@ -48,7 +49,7 @@ export function buildWhiteboardWorkspaceExportJson({
     format: WHITEBOARD_WORKSPACE_FORMAT,
     entity: 'whiteboard_workspace',
     version: 1,
-    notes: 'This file stores a full whiteboard snapshot including the base exercise, nodes, links, groups, collapsed states, colors, and rich math content. Rich fields accept editor HTML and preserve inline math.',
+    notes: 'This file stores a full whiteboard snapshot including the base exercise, nodes, links, groups, collapsed states, colors, attached technique ids, and rich math content. Rich fields accept editor HTML and preserve inline math.',
     exportedAt: new Date().toISOString(),
     exportedByUserId: String(exportedByUserId || '').trim(),
     workspace: {
@@ -67,7 +68,7 @@ export function buildWhiteboardWorkspaceTemplateJson() {
     format: WHITEBOARD_WORKSPACE_FORMAT,
     entity: 'whiteboard_workspace',
     version: 1,
-    notes: 'Use workspace.exercise for the base exercise. Use workspace.nodes and workspace.links for the whiteboard graph. Nodes may include rich HTML with inline math. Links may include rich justification. Groups are nodes with type "group" and memberNodeIds. collapsed=true reduces a node to its title in the board.',
+    notes: 'Use workspace.exercise for the base exercise. Use workspace.nodes and workspace.links for the whiteboard graph. Nodes may include rich HTML with inline math and an optional techniqueId. Links may include rich justification. Groups are nodes with type "group" and memberNodeIds. collapsed=true reduces a node to its title in the board.',
     workspace: {
       title: 'Exercise 12 - Quadratic Intersections',
       visibility: 'public',
@@ -96,6 +97,7 @@ export function buildWhiteboardWorkspaceTemplateJson() {
           x: 80,
           y: 60,
           width: 220,
+          techniqueId: '',
           locked: true,
         },
       ],

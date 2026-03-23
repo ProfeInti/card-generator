@@ -349,6 +349,19 @@ function buildPanState() {
   }
 }
 
+function buildSelectionBoxState() {
+  return {
+    active: false,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+    additive: false,
+    initialNodeIds: [],
+    hasMoved: false,
+  }
+}
+
 function clampFloatingPosition(value, min, max) {
   return Math.max(min, Math.min(value, max))
 }
@@ -406,6 +419,9 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   const [linkTechniquePickerOpen, setLinkTechniquePickerOpen] = useState(false)
   const [linkTechniqueSearch, setLinkTechniqueSearch] = useState('')
   const [linkTechniqueLanguage, setLinkTechniqueLanguage] = useState('es')
+  const [nodeTechniquePickerOpen, setNodeTechniquePickerOpen] = useState(false)
+  const [nodeTechniqueSearch, setNodeTechniqueSearch] = useState('')
+  const [nodeTechniqueLanguage, setNodeTechniqueLanguage] = useState('es')
   const [editorState, setEditorState] = useState(buildEditorState)
   const [canvasMenu, setCanvasMenu] = useState(buildCanvasMenuState)
   const [techniquesError, setTechniquesError] = useState('')
@@ -421,6 +437,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   const [zoomLevel, setZoomLevel] = useState(1)
   const [interactionMode, setInteractionMode] = useState('select')
   const [panState, setPanState] = useState(buildPanState)
+  const [selectionBox, setSelectionBox] = useState(buildSelectionBoxState)
 
   const currentBoardSignatureRef = useRef('')
   const remoteAppliedSignatureRef = useRef('')
@@ -429,6 +446,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   const dragStartSnapshotRef = useRef(null)
   const currentNodesRef = useRef([])
   const currentLinksRef = useRef([])
+  const selectedNodeIdsRef = useRef(selectedNodeIds)
   const importFileRef = useRef(null)
   const boardCanvasRef = useRef(null)
   const editorPanelRef = useRef(null)
@@ -440,6 +458,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   const selectedLinkIdRef = useRef(selectedLinkId)
   const dragStateRef = useRef(dragState)
   const linkFormRef = useRef(linkForm)
+  const suppressNextStageClickRef = useRef(false)
 
   useEffect(() => {
     selectedExerciseRef.current = selectedExercise
@@ -458,6 +477,10 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   }, [selectedLinkId])
 
   useEffect(() => {
+    selectedNodeIdsRef.current = selectedNodeIds
+  }, [selectedNodeIds])
+
+  useEffect(() => {
     dragStateRef.current = dragState
   }, [dragState])
 
@@ -469,6 +492,10 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     if (editorState.mode !== 'link') {
       setLinkTechniquePickerOpen(false)
       setLinkTechniqueSearch('')
+    }
+    if (editorState.mode !== 'node') {
+      setNodeTechniquePickerOpen(false)
+      setNodeTechniqueSearch('')
     }
   }, [editorState.mode])
 
@@ -516,17 +543,34 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     [techniques, linkForm.techniqueId]
   )
 
+  const selectedNodeTechnique = useMemo(
+    () => techniques.find((item) => item.id === activeEditableNode?.techniqueId) || null,
+    [techniques, activeEditableNode?.techniqueId]
+  )
+
   const filteredTechniques = useMemo(() => {
     const search = String(linkTechniqueSearch || '').trim().toLowerCase()
     if (!search) return techniques
     return techniques.filter((item) => String(getTechniqueTranslation(item, linkTechniqueLanguage).name || '').toLowerCase().includes(search))
   }, [techniques, linkTechniqueSearch, linkTechniqueLanguage])
 
+  const filteredNodeTechniques = useMemo(() => {
+    const search = String(nodeTechniqueSearch || '').trim().toLowerCase()
+    if (!search) return techniques
+    return techniques.filter((item) => String(getTechniqueTranslation(item, nodeTechniqueLanguage).name || '').toLowerCase().includes(search))
+  }, [techniques, nodeTechniqueSearch, nodeTechniqueLanguage])
+
   const selectableLinkTechniques = useMemo(() => (
     selectedTechnique?.id && !filteredTechniques.some((item) => item.id === selectedTechnique.id)
       ? [selectedTechnique, ...filteredTechniques]
       : filteredTechniques
   ), [filteredTechniques, selectedTechnique])
+
+  const selectableNodeTechniques = useMemo(() => (
+    selectedNodeTechnique?.id && !filteredNodeTechniques.some((item) => item.id === selectedNodeTechnique.id)
+      ? [selectedNodeTechnique, ...filteredNodeTechniques]
+      : filteredNodeTechniques
+  ), [filteredNodeTechniques, selectedNodeTechnique])
 
   const boardMetrics = useMemo(() => {
     const maxX = nodes.reduce((acc, node) => {
@@ -556,6 +600,16 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     () => nodes.filter((node) => showOfficialResult || !node.isOfficial),
     [nodes, showOfficialResult]
   )
+
+  const selectionBounds = useMemo(() => {
+    if (!selectionBox.active) return null
+    return {
+      left: Math.min(selectionBox.startX, selectionBox.currentX),
+      top: Math.min(selectionBox.startY, selectionBox.currentY),
+      right: Math.max(selectionBox.startX, selectionBox.currentX),
+      bottom: Math.max(selectionBox.startY, selectionBox.currentY),
+    }
+  }, [selectionBox])
 
   const isWorkspaceOwner = Boolean(
     loadedWorkspace
@@ -654,6 +708,34 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
       startScrollTop: canvasElement.scrollTop,
     })
   }, [])
+
+  const applySelectionBox = useCallback((nextSelectionBox) => {
+    const bounds = {
+      left: Math.min(nextSelectionBox.startX, nextSelectionBox.currentX),
+      top: Math.min(nextSelectionBox.startY, nextSelectionBox.currentY),
+      right: Math.max(nextSelectionBox.startX, nextSelectionBox.currentX),
+      bottom: Math.max(nextSelectionBox.startY, nextSelectionBox.currentY),
+    }
+    const hitNodeIds = visibleNodes
+      .filter((node) => {
+        const nodeBounds = getNodeBounds(node, nodes)
+        if (!nodeBounds) return false
+        return (
+          nodeBounds.x < bounds.right
+          && nodeBounds.x + nodeBounds.width > bounds.left
+          && nodeBounds.y < bounds.bottom
+          && nodeBounds.y + nodeBounds.height > bounds.top
+        )
+      })
+      .map((node) => node.id)
+    const nextSelectedNodeIds = nextSelectionBox.additive
+      ? Array.from(new Set([...(nextSelectionBox.initialNodeIds || []), ...hitNodeIds]))
+      : hitNodeIds
+    setSelectedNodeIds(nextSelectedNodeIds)
+    setSelectedNodeId(nextSelectedNodeIds[0] || '')
+    setSelectedLinkId('')
+    setCanvasMenu(buildCanvasMenuState())
+  }, [nodes, visibleNodes])
 
   const publishPresence = useCallback(async () => {
     const channel = realtimeChannelRef.current
@@ -1007,6 +1089,42 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
       window.removeEventListener('pointerup', handlePointerUp)
     }
   }, [panState])
+
+  useEffect(() => {
+    if (!selectionBox.active) return
+
+    const handlePointerMove = (event) => {
+      const pointerPosition = getBoardCoordinatesFromClient(event.clientX, event.clientY)
+      setSelectionBox((prev) => {
+        if (!prev.active) return prev
+        const nextSelectionBox = {
+          ...prev,
+          currentX: pointerPosition.x,
+          currentY: pointerPosition.y,
+          hasMoved: prev.hasMoved
+            || Math.abs(pointerPosition.x - prev.startX) > 6
+            || Math.abs(pointerPosition.y - prev.startY) > 6,
+        }
+        applySelectionBox(nextSelectionBox)
+        return nextSelectionBox
+      })
+    }
+
+    const handlePointerUp = () => {
+      if (selectionBox.hasMoved) {
+        suppressNextStageClickRef.current = true
+      }
+      setSelectionBox(buildSelectionBoxState())
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp)
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [selectionBox, applySelectionBox, getBoardCoordinatesFromClient])
 
   useEffect(() => {
     const closeFloatingUi = (event) => {
@@ -1934,10 +2052,30 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
             onPointerDown={(event) => {
               const shouldPanWithMiddleClick = event.button === 1
               const shouldPanWithHandTool = interactionMode === 'hand' && event.button === 0
-              if (!shouldPanWithMiddleClick && !shouldPanWithHandTool) return
-              startCanvasPan(event)
+              if (shouldPanWithMiddleClick || shouldPanWithHandTool) {
+                startCanvasPan(event)
+                return
+              }
+              if (event.button !== 0 || event.target !== event.currentTarget) return
+              const boardPosition = getBoardCoordinatesFromClient(event.clientX, event.clientY)
+              setEditorState(buildEditorState())
+              setCanvasMenu(buildCanvasMenuState())
+              setSelectionBox({
+                active: true,
+                startX: boardPosition.x,
+                startY: boardPosition.y,
+                currentX: boardPosition.x,
+                currentY: boardPosition.y,
+                additive: Boolean(event.shiftKey || event.ctrlKey || event.metaKey),
+                initialNodeIds: event.shiftKey || event.ctrlKey || event.metaKey ? selectedNodeIdsRef.current : [],
+                hasMoved: false,
+              })
             }}
             onClick={() => {
+              if (suppressNextStageClickRef.current) {
+                suppressNextStageClickRef.current = false
+                return
+              }
               setEditorState(buildEditorState())
               setCanvasMenu(buildCanvasMenuState())
               setSelectedNodeId('')
@@ -2009,6 +2147,18 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                 })()
               ))}
             </svg>
+
+            {selectionBounds && (
+              <div
+                className="wb-selection-box"
+                style={{
+                  left: `${selectionBounds.left}px`,
+                  top: `${selectionBounds.top}px`,
+                  width: `${Math.max(0, selectionBounds.right - selectionBounds.left)}px`,
+                  height: `${Math.max(0, selectionBounds.bottom - selectionBounds.top)}px`,
+                }}
+              />
+            )}
 
             {visibleNodes.filter((node) => node.type === 'group').map((node) => {
               const bounds = getNodeBounds(node, nodes)
@@ -2245,6 +2395,102 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                       onChange={(e) => updateSelectedNode('customColor', e.target.value)}
                     />
                   </label>
+
+                  <label className="field">
+                    <span>Optional Account Technique</span>
+                    <div
+                      className={`construct-technique-picker ${nodeTechniquePickerOpen ? 'is-open' : ''}`}
+                      onBlur={(event) => {
+                        if (!event.currentTarget.contains(event.relatedTarget)) {
+                          setNodeTechniquePickerOpen(false)
+                        }
+                      }}
+                    >
+                      {nodeTechniquePickerOpen ? (
+                        <>
+                          <input
+                            autoFocus
+                            className="construct-technique-input"
+                            value={nodeTechniqueSearch}
+                            onChange={(e) => setNodeTechniqueSearch(e.target.value)}
+                            placeholder={nodeTechniqueLanguage === 'fr' ? 'Search technique by French name' : 'Search technique by Spanish name'}
+                          />
+                          <div className="construct-technique-options" role="listbox">
+                            <button
+                              type="button"
+                              className={`construct-technique-option ${!nodeEditorTarget.techniqueId ? 'is-selected' : ''}`}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => {
+                                updateSelectedNode('techniqueId', '')
+                                setNodeTechniquePickerOpen(false)
+                              }}
+                            >
+                              No predefined technique
+                            </button>
+                            {selectableNodeTechniques.length > 0 ? (
+                              selectableNodeTechniques.map((technique) => (
+                                <button
+                                  key={technique.id}
+                                  type="button"
+                                  className={`construct-technique-option ${technique.id === nodeEditorTarget.techniqueId ? 'is-selected' : ''}`}
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => {
+                                    updateSelectedNode('techniqueId', technique.id)
+                                    setNodeTechniquePickerOpen(false)
+                                  }}
+                                >
+                                  {(getTechniqueTranslation(technique, nodeTechniqueLanguage).name || 'Untitled technique') + ' | ' + (technique.topic || 'No topic')}
+                                </button>
+                              ))
+                            ) : (
+                              <div className="construct-technique-empty">No techniques match that name.</div>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className={`construct-technique-trigger ${nodeEditorTarget.techniqueId ? 'has-value' : ''}`}
+                          onClick={() => setNodeTechniquePickerOpen(true)}
+                        >
+                          {selectedNodeTechnique
+                            ? `${getTechniqueTranslation(selectedNodeTechnique, nodeTechniqueLanguage).name || 'Untitled technique'} | ${selectedNodeTechnique.topic || 'No topic'}`
+                            : 'No predefined technique'}
+                        </button>
+                      )}
+                    </div>
+                  </label>
+
+                  <div className="auth-tabs" style={{ marginBottom: 8 }}>
+                    {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
+                      <button
+                        key={language.id}
+                        type="button"
+                        className={`auth-tab ${nodeTechniqueLanguage === language.id ? 'active' : ''}`}
+                        onClick={() => setNodeTechniqueLanguage(language.id)}
+                      >
+                        {language.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {techniquesError && <div className="saved-empty">{techniquesError}</div>}
+                  {!techniquesError && (
+                    <div className="saved-empty">You can attach a saved technique to this node or group as a reference for the reasoning step it represents.</div>
+                  )}
+                  {selectedNodeTechnique && (
+                    <div
+                      className="wb-technique-help"
+                      dangerouslySetInnerHTML={{
+                        __html: renderNodeHtml(
+                          getTechniqueTranslation(selectedNodeTechnique, nodeTechniqueLanguage).effectDescription
+                          || selectedNodeTechnique.effectDescription
+                          || selectedNodeTechnique.summary
+                          || ''
+                        ),
+                      }}
+                    />
+                  )}
 
                   {nodeEditorTarget.type !== 'group' && (
                     <div className="menu-actions wb-inline-actions">

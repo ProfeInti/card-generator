@@ -2617,6 +2617,16 @@ math-virtual-keyboard,
   position: relative;
 }
 
+.wb-selection-box {
+  position: absolute;
+  border: 1.5px dashed rgba(83, 209, 240, 0.95);
+  background: rgba(83, 209, 240, 0.14);
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 4;
+  box-shadow: inset 0 0 0 1px rgba(245, 196, 81, 0.16);
+}
+
 .wb-zoom-controls {
   display: inline-flex;
   gap: 8px;
