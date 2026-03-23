@@ -601,6 +601,11 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     [nodes, showOfficialResult]
   )
 
+  const selectableGroupMembers = useMemo(
+    () => nodes.filter((node) => node.type !== 'group'),
+    [nodes]
+  )
+
   const selectionBounds = useMemo(() => {
     if (!selectionBox.active) return null
     return {
@@ -1031,8 +1036,22 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
 
     const handlePointerMove = (event) => {
       const pointerPosition = getBoardCoordinatesFromClient(event.clientX, event.clientY)
-      setNodes((prev) =>
-        prev.map((node) => {
+      setNodes((prev) => {
+        if (dragState.kind === 'group') {
+          const deltaX = pointerPosition.x - dragState.startPointerX
+          const deltaY = pointerPosition.y - dragState.startPointerY
+          return prev.map((node) => {
+            const startPosition = dragState.startPositions?.[node.id]
+            if (!startPosition) return node
+            return {
+              ...node,
+              x: Math.max(12, startPosition.x + deltaX),
+              y: Math.max(12, startPosition.y + deltaY),
+            }
+          })
+        }
+
+        return prev.map((node) => {
           if (node.id !== dragState.nodeId) return node
           return {
             ...node,
@@ -1040,7 +1059,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
             y: Math.max(12, pointerPosition.y - dragState.offsetY),
           }
         })
-      )
+      })
     }
 
     const handlePointerUp = () => {
@@ -1614,6 +1633,11 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     return node && node.type !== 'group'
   }).length >= 2
 
+  const selectedGroupableNodeIds = selectedNodeIds.filter((nodeId) => {
+    const node = nodes.find((item) => item.id === nodeId)
+    return node && node.type !== 'group'
+  })
+
   const deleteSelectedNode = () => {
     if (!activeEditableNodeId) return
     commitHistoryEntry(buildBoardSnapshot(nodes, links))
@@ -2178,6 +2202,41 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                     borderColor: remoteNodeEditor ? remoteNodeEditor.color : undefined,
                     boxShadow: remoteNodeEditor ? `0 0 0 1px ${remoteNodeEditor.color}` : undefined,
                   }}
+                  onPointerDown={(event) => {
+                    const shouldPanWithMiddleClick = event.button === 1
+                    const shouldPanWithHandTool = interactionMode === 'hand' && event.button === 0
+                    if (shouldPanWithMiddleClick || shouldPanWithHandTool) {
+                      startCanvasPan(event)
+                      return
+                    }
+                    if (event.button !== 0) return
+                    event.stopPropagation()
+                    const memberNodeIds = Array.isArray(node.memberNodeIds) ? node.memberNodeIds : []
+                    const movableNodeIds = memberNodeIds.length ? [node.id, ...memberNodeIds] : [node.id]
+                    const startPositions = movableNodeIds.reduce((acc, movableId) => {
+                      const targetNode = nodes.find((item) => item.id === movableId)
+                      if (!targetNode) return acc
+                      acc[movableId] = { x: targetNode.x, y: targetNode.y }
+                      return acc
+                    }, {})
+                    const boardPosition = getBoardCoordinatesFromClient(event.clientX, event.clientY)
+                    setSelectedNodeId(node.id)
+                    setSelectedNodeIds((prev) => {
+                      if (event.shiftKey || event.ctrlKey || event.metaKey) {
+                        return prev.includes(node.id) ? prev : [...prev, node.id]
+                      }
+                      return [node.id]
+                    })
+                    setSelectedLinkId('')
+                    dragStartSnapshotRef.current = buildBoardSnapshot(nodes, links)
+                    setDragState({
+                      kind: 'group',
+                      nodeId: node.id,
+                      startPointerX: boardPosition.x,
+                      startPointerY: boardPosition.y,
+                      startPositions,
+                    })
+                  }}
                   onClick={(event) => {
                     event.stopPropagation()
                     setSelectedNodeId(node.id)
@@ -2245,6 +2304,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                     const boardPosition = getBoardCoordinatesFromClient(event.clientX, event.clientY)
                     dragStartSnapshotRef.current = buildBoardSnapshot(nodes, links)
                     setDragState({
+                      kind: 'node',
                       nodeId: node.id,
                       offsetX: boardPosition.x - node.x,
                       offsetY: boardPosition.y - node.y,
@@ -2504,7 +2564,54 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
                     {nodeEditorTarget.locked ? 'Editable base node' : 'Manual node'}
                   </div>
                   {nodeEditorTarget.type === 'group' && (
-                    <div className="saved-item-tags">Members: {nodeEditorTarget.memberNodeIds?.length || 0}</div>
+                    <>
+                      <div className="saved-item-tags">Members: {nodeEditorTarget.memberNodeIds?.length || 0}</div>
+                      <div className="saved-empty">Select which nodes belong to this group. Moving the group will move all selected members together.</div>
+                      {!!selectedGroupableNodeIds.length && (
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => {
+                            updateSelectedNode(
+                              'memberNodeIds',
+                              Array.from(new Set([
+                                ...(Array.isArray(nodeEditorTarget.memberNodeIds) ? nodeEditorTarget.memberNodeIds : []),
+                                ...selectedGroupableNodeIds,
+                              ]))
+                            )
+                          }}
+                        >
+                          Use Current Selection
+                        </button>
+                      )}
+                      <div className="wb-group-member-list">
+                        {selectableGroupMembers.length ? (
+                          selectableGroupMembers.map((memberNode) => {
+                            const checked = Array.isArray(nodeEditorTarget.memberNodeIds) && nodeEditorTarget.memberNodeIds.includes(memberNode.id)
+                            return (
+                              <label key={memberNode.id} className="wb-group-member-option">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(event) => {
+                                    const currentMemberIds = Array.isArray(nodeEditorTarget.memberNodeIds)
+                                      ? nodeEditorTarget.memberNodeIds
+                                      : []
+                                    const nextMemberIds = event.target.checked
+                                      ? [...currentMemberIds, memberNode.id]
+                                      : currentMemberIds.filter((memberId) => memberId !== memberNode.id)
+                                    updateSelectedNode('memberNodeIds', Array.from(new Set(nextMemberIds)))
+                                  }}
+                                />
+                                <span>{memberNode.title || getNodeTypeMeta(memberNode.type).label}</span>
+                              </label>
+                            )
+                          })
+                        ) : (
+                          <div className="saved-empty">There are no non-group nodes available to add.</div>
+                        )}
+                      </div>
+                    </>
                   )}
 
                   <div className="menu-actions wb-inline-actions">
