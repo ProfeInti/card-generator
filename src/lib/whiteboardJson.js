@@ -70,6 +70,7 @@ export function buildWhiteboardExercisesTemplateJson() {
       'Every rich field accepts either editor HTML or plain text.',
       'If plain text contains inline math, wrap each expression with $...$ so the importer converts it to the internal math-inline HTML used by the app and the equations render correctly in the whiteboard.',
       'Use standard LaTeX notation inside $...$. Example for a rich field: "Resuelve $x^2+5x+6=0$."',
+      'Inside mathematical notation, use standard English function names and abbreviations. Example: write "$\\sin t$" instead of "$\\sen t$".',
       'Write every field with the minimum number of words needed to remain clear. Prefer concise mathematical statements over long prose.',
       'When a formula, relation, condition, or result can communicate the idea clearly, prefer the formula plus a short label instead of a long verbal explanation.',
       'Do not leave mathematical expressions in ambiguous plain text when they should render as math. Prefer "$x^2+5x+6=0$" over "x^2+5x+6=0".',

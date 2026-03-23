@@ -251,6 +251,7 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
           <div className="saved-empty">Topic and title as the minimum identity, structured source metadata, and rich math content to seed the whiteboard.</div>
           <div className="saved-empty">Keep every field concise: use the fewest words possible while preserving mathematical clarity.</div>
           <div className="saved-empty">When importing or drafting content outside the editor, wrap inline math with $...$ so equations render correctly after conversion.</div>
+          <div className="saved-empty">Inside equations, use English math notation for functions and abbreviations: write `sin t` instead of `sen t`.</div>
         </div>
         <div className="wb-header-actions">
           <button type="button" className="btn" onClick={() => applyRecord(buildEmptyWhiteboardExercise())}>New Draft</button>

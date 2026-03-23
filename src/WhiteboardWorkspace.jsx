@@ -497,6 +497,15 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     [nodes, selectedNodeId]
   )
 
+  const activeNodeEditorId = editorState.mode === 'node' ? editorState.targetId || '' : ''
+
+  const activeEditableNodeId = activeNodeEditorId || selectedNodeId
+
+  const activeEditableNode = useMemo(
+    () => nodes.find((node) => node.id === activeEditableNodeId) || null,
+    [nodes, activeEditableNodeId]
+  )
+
   const selectedLink = useMemo(
     () => links.find((link) => link.id === selectedLinkId) || null,
     [links, selectedLinkId]
@@ -1309,21 +1318,21 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   ])
 
   const updateSelectedNode = (key, value) => {
-    if (!selectedNodeId) return
+    if (!activeEditableNodeId) return
     setNodes((prev) => prev.map((node) => (
-      node.id === selectedNodeId ? { ...node, [key]: value } : node
+      node.id === activeEditableNodeId ? { ...node, [key]: value } : node
     )))
   }
 
   const toggleSelectedNodeCollapsed = () => {
-    if (!selectedNodeId) return
+    if (!activeEditableNodeId) return
     commitHistoryEntry(buildBoardSnapshot(nodes, links))
     const nextNodes = nodes.map((node) => (
-      node.id === selectedNodeId
+      node.id === activeEditableNodeId
         ? { ...node, collapsed: !node.collapsed }
         : node
     ))
-    applyCommittedBoardChange(nextNodes, links, { preferredNodeId: selectedNodeId })
+    applyCommittedBoardChange(nextNodes, links, { preferredNodeId: activeEditableNodeId })
   }
 
   const openNodeEditor = (nodeId, event) => {
@@ -1432,26 +1441,26 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   }
 
   const duplicateSelectedNode = () => {
-    if (!selectedNode || selectedNode.type === 'group') return
+    if (!activeEditableNode || activeEditableNode.type === 'group') return
     const nextNode = {
-      ...selectedNode,
+      ...activeEditableNode,
       id: `wb-node-${crypto.randomUUID ? crypto.randomUUID() : Date.now()}`,
-      x: selectedNode.x + 28,
-      y: selectedNode.y + 28,
+      x: activeEditableNode.x + 28,
+      y: activeEditableNode.y + 28,
       locked: false,
-      title: selectedNode.title ? `${selectedNode.title} copia` : 'Copia',
+      title: activeEditableNode.title ? `${activeEditableNode.title} copia` : 'Copia',
     }
     commitHistoryEntry(buildBoardSnapshot(nodes, links))
     applyCommittedBoardChange([...nodes, nextNode], links, { preferredNodeId: nextNode.id })
   }
 
   const copySelectedNode = async () => {
-    if (!selectedNode || selectedNode.type === 'group') return
+    if (!activeEditableNode || activeEditableNode.type === 'group') return
     const snapshot = {
-      type: selectedNode.type,
-      title: selectedNode.title || '',
-      content: selectedNode.content || '',
-      width: selectedNode.width || FIXED_NODE_WIDTH,
+      type: activeEditableNode.type,
+      title: activeEditableNode.title || '',
+      content: activeEditableNode.content || '',
+      width: activeEditableNode.width || FIXED_NODE_WIDTH,
     }
     setCopiedNode(snapshot)
 
@@ -1488,20 +1497,20 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
   }).length >= 2
 
   const deleteSelectedNode = () => {
-    if (!selectedNodeId) return
+    if (!activeEditableNodeId) return
     commitHistoryEntry(buildBoardSnapshot(nodes, links))
     const nextNodes = nodes.filter((node) => {
-      if (node.id === selectedNodeId) return false
-      if (node.type === 'group' && Array.isArray(node.memberNodeIds) && node.memberNodeIds.includes(selectedNodeId)) {
+      if (node.id === activeEditableNodeId) return false
+      if (node.type === 'group' && Array.isArray(node.memberNodeIds) && node.memberNodeIds.includes(activeEditableNodeId)) {
         return true
       }
       return true
     }).map((node) => (
       node.type === 'group'
-        ? { ...node, memberNodeIds: (node.memberNodeIds || []).filter((memberId) => memberId !== selectedNodeId) }
+        ? { ...node, memberNodeIds: (node.memberNodeIds || []).filter((memberId) => memberId !== activeEditableNodeId) }
         : node
     ))
-    const nextLinks = links.filter((link) => link.fromNodeId !== selectedNodeId && link.toNodeId !== selectedNodeId)
+    const nextLinks = links.filter((link) => link.fromNodeId !== activeEditableNodeId && link.toNodeId !== activeEditableNodeId)
     applyCommittedBoardChange(nextNodes, nextLinks)
   }
 

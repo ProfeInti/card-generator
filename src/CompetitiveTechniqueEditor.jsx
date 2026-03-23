@@ -445,6 +445,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
           <div className="saved-empty">A technique should describe a reusable mathematical method, criterion, transformation, or operation, not just one isolated solution.</div>
           <div className="saved-empty">Keep the wording minimal and precise: as few words as possible, without sacrificing clarity.</div>
           <div className="saved-empty">When importing or drafting outside the editor, every equation or symbolic expression must be wrapped with $...$ so it renders correctly after conversion.</div>
+          <div className="saved-empty">Inside those equations, use English math notation in functions and abbreviations: write `sin t` instead of `sen t`.</div>
 
           <label className="field">
             <span>Status</span>

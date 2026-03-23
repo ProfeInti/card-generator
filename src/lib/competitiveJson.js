@@ -69,6 +69,7 @@ export function buildTechniquesTemplateJson() {
       'Any field containing equations must be written in a format that renders correctly in the app after import. Use editor HTML or plain text with every mathematical expression wrapped in inline LaTeX between $...$.',
       'Do not leave equations, symbolic transformations, or mathematical equalities as ambiguous plain text when they are meant to render as math.',
       'Use standard LaTeX notation inside $...$. Prefer "$x^2+6x+5=0$" over "x^2+6x+5=0" when the content is mathematical.',
+      'Inside mathematical notation, use standard English function names and abbreviations. Example: write "$\\sin t$" instead of "$\\sen t$".',
       'Keep the language of each field internally consistent. Spanish fields should stay in Spanish; French fields should stay in French.',
       'For best compatibility, generate canonical field names exactly as shown here.',
       'Strict math rendering rules: all mathematical expressions must be written exclusively in HTML using <span data-type="math-inline" data-latex="..."></span>.',
