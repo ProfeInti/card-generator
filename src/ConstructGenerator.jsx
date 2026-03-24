@@ -13,7 +13,7 @@ import {
   updateConstructStep,
 } from './data/competitiveConstructsRepo'
 import { DEFAULT_ART_DATA_URL } from './lib/cardWorkspace'
-import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
+import { getTechniqueTaxonomy, getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 const STATUS_OPTIONS = ['draft', 'proposed', 'approved', 'rejected']
@@ -963,6 +963,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                     const techniqueTranslation = getTechniqueTranslation(technique, techniquePickerLanguage)
                     const renderedProgress = renderMathInHtml(normalizeMathHtmlInput(step.progressState))
                     const renderedTechniqueDescription = renderMathInHtml(normalizeMathHtmlInput(techniqueTranslation.effectDescription || ''))
+                    const techniqueTaxonomy = getTechniqueTaxonomy(technique, techniquePickerLanguage)
                     const showTechniqueDetails = Boolean(techniqueDetailsOpenByStep[step.localId])
                     const isTechniquePickerOpen = Boolean(techniquePickerOpenByStep[step.localId])
                     const techniqueSearch = String(techniqueSearchByStep[step.localId] || '').trim().toLowerCase()
@@ -974,7 +975,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                       ? [technique, ...filteredTechniques]
                       : filteredTechniques
                     const selectedTechniqueLabel = technique
-                      ? `${getTechniqueTranslation(technique, techniquePickerLanguage).name || 'Untitled technique'} | ${technique.topic || 'No topic'}`
+                      ? `${getTechniqueTranslation(technique, techniquePickerLanguage).name || 'Untitled technique'} | ${techniqueTaxonomy.topic || 'No topic'}`
                       : 'Select approved technique'
 
                     return (
@@ -1022,7 +1023,10 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
                                         onMouseDown={(event) => event.preventDefault()}
                                         onClick={() => selectTechniqueForStep(step.localId, item.id)}
                                       >
-                                        {(getTechniqueTranslation(item, techniquePickerLanguage).name || 'Untitled technique') + ' | ' + (item.topic || 'No topic')}
+                                        {(() => {
+                                          const itemTaxonomy = getTechniqueTaxonomy(item, techniquePickerLanguage)
+                                          return (getTechniqueTranslation(item, techniquePickerLanguage).name || 'Untitled technique') + ' | ' + (itemTaxonomy.topic || 'No topic')
+                                        })()}
                                       </button>
                                     ))
                                   ) : (
@@ -1044,7 +1048,7 @@ export default function ConstructGenerator({ session, onBackToCompetitive, onLog
 
                         {technique && (
                           <>
-                            <div className="saved-item-tags">Technique selected: {techniqueTranslation.name || 'Untitled'} ({technique.effect_type || 'N/A'})</div>
+                            <div className="saved-item-tags">Technique selected: {techniqueTranslation.name || 'Untitled'} ({techniqueTaxonomy.effectType || 'N/A'})</div>
                             <div className="saved-item-actions">
                               <button type="button" className="btn" onClick={() => toggleTechniqueDetails(step.localId)}>
                                 {showTechniqueDetails ? 'Hide More Details' : 'More Details'}

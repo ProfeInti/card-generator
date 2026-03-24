@@ -5,7 +5,7 @@ import {
   listConstructExerciseSummariesByIds,
 } from './data/competitiveConstructsRepo'
 import { listApprovedCompetitiveTechniques } from './data/competitiveTechniquesRepo'
-import { getTechniqueDisplayName } from './lib/competitiveTechniqueLocale'
+import { getTechniqueDisplayName, getTechniqueTaxonomy } from './lib/competitiveTechniqueLocale'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 const DISTRACTOR_COUNT = 11
@@ -33,10 +33,12 @@ function formatPathLabel(path) {
 
 function topicScore(candidate, correct) {
   if (!candidate || !correct) return 0
-  const sameSubtopic = normalize(candidate.subtopic) && normalize(candidate.subtopic) === normalize(correct.subtopic)
+  const candidateTaxonomy = getTechniqueTaxonomy(candidate)
+  const correctTaxonomy = getTechniqueTaxonomy(correct)
+  const sameSubtopic = normalize(candidateTaxonomy.subtopic) && normalize(candidateTaxonomy.subtopic) === normalize(correctTaxonomy.subtopic)
   if (sameSubtopic) return 2
 
-  const sameTopic = normalize(candidate.topic) && normalize(candidate.topic) === normalize(correct.topic)
+  const sameTopic = normalize(candidateTaxonomy.topic) && normalize(candidateTaxonomy.topic) === normalize(correctTaxonomy.topic)
   if (sameTopic) return 1
 
   return 0
@@ -150,34 +152,35 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
   )
 
   const topicOptions = useMemo(
-    () => [...new Set(techniqueOptions.map((item) => String(item.topic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    () => [...new Set(techniqueOptions.map((item) => String(getTechniqueTaxonomy(item).topic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     [techniqueOptions]
   )
 
   const subtopicOptions = useMemo(
-    () => [...new Set(techniqueOptions.map((item) => String(item.subtopic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    () => [...new Set(techniqueOptions.map((item) => String(getTechniqueTaxonomy(item).subtopic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     [techniqueOptions]
   )
 
   const effectTypeOptions = useMemo(
-    () => [...new Set(techniqueOptions.map((item) => String(item.effect_type || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    () => [...new Set(techniqueOptions.map((item) => String(getTechniqueTaxonomy(item).effectType || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     [techniqueOptions]
   )
 
   const filteredTechniqueOptions = useMemo(() => {
     const search = normalize(techniqueSearch)
     const matches = techniqueOptions.filter((technique) => {
-      if (topicFilter && normalize(technique.topic) !== normalize(topicFilter)) return false
-      if (subtopicFilter && normalize(technique.subtopic) !== normalize(subtopicFilter)) return false
-      if (effectTypeFilter && normalize(technique.effect_type) !== normalize(effectTypeFilter)) return false
+      const taxonomy = getTechniqueTaxonomy(technique)
+      if (topicFilter && normalize(taxonomy.topic) !== normalize(topicFilter)) return false
+      if (subtopicFilter && normalize(taxonomy.subtopic) !== normalize(subtopicFilter)) return false
+      if (effectTypeFilter && normalize(taxonomy.effectType) !== normalize(effectTypeFilter)) return false
 
       if (!search) return true
 
       const haystack = [
         getTechniqueDisplayName(technique),
-        technique.topic,
-        technique.subtopic,
-        technique.effect_type,
+        taxonomy.topic,
+        taxonomy.subtopic,
+        taxonomy.effectType,
         normalizeMathHtmlInput(technique.effect_description || ''),
       ]
         .map((value) => normalize(value))
@@ -537,6 +540,7 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
                           const isWrongSelection = isSelected && currentStep?.technique_id !== technique.id
 
                           const renderedEffect = renderMathInHtml(normalizeMathHtmlInput(technique.effect_description || ''))
+                          const taxonomy = getTechniqueTaxonomy(technique)
 
                           return (
                             <button
@@ -546,8 +550,8 @@ export default function CompetitiveTrainingMode({ session, onBackToCompetitive, 
                               onClick={() => handleTechniquePick(technique.id)}
                             >
                               <div className="training-tech-name">{getTechniqueDisplayName(technique)}</div>
-                              <div className="training-tech-meta">{technique.topic || 'N/A'} / {technique.subtopic || 'N/A'}</div>
-                              <div className="training-tech-meta">Effect: {technique.effect_type || 'N/A'}</div>
+                              <div className="training-tech-meta">{taxonomy.topic || 'N/A'} / {taxonomy.subtopic || 'N/A'}</div>
+                              <div className="training-tech-meta">Effect: {taxonomy.effectType || 'N/A'}</div>
                               <div className="training-tech-effect" dangerouslySetInnerHTML={{ __html: renderedEffect }} />
                             </button>
                           )

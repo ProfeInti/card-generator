@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { TextStyle } from '@tiptap/extension-text-style'
@@ -10,6 +11,8 @@ import TableCell from '@tiptap/extension-table-cell'
 
 import MathInlineNode from './MathInlineNode'
 import ResizableImageNode from './ResizableImageNode'
+import { MathfieldElement } from 'mathlive'
+import 'mathlive/static.css'
 
 const SKETCH_WIDTH = 900
 const SKETCH_HEIGHT = 420
@@ -64,6 +67,45 @@ function redrawSketchCanvas(canvas, strokes) {
   ;(Array.isArray(strokes) ? strokes : []).forEach((stroke) => drawStroke(ctx, stroke))
 }
 
+function hideVirtualKeyboardSafely(mf) {
+  try {
+    mf?.executeCommand('hideVirtualKeyboard')
+  } catch {
+    // noop
+  }
+
+  try {
+    if (typeof window !== 'undefined' && window.mathVirtualKeyboard) {
+      if (typeof window.mathVirtualKeyboard.hide === 'function') {
+        window.mathVirtualKeyboard.hide()
+      }
+      window.mathVirtualKeyboard.visible = false
+    }
+  } catch {
+    // noop
+  }
+}
+
+function readLatexSafely(mf, fallback = '') {
+  if (!mf) return String(fallback || '').trim()
+
+  try {
+    const value = String(mf.value || '').trim()
+    if (value) return value
+  } catch {
+    // noop
+  }
+
+  try {
+    const value = String(mf.getValue?.('latex') || '').trim()
+    if (value) return value
+  } catch {
+    // noop
+  }
+
+  return String(fallback || '').trim()
+}
+
 export default function DescriptionEditor({ value, onChange, baseFontFamily, baseFontSize, readOnly = false }) {
   const [textColor, setTextColor] = useState('#b6fff0')
   const [imageUrlInput, setImageUrlInput] = useState('')
@@ -72,9 +114,13 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
   const [sketchSize, setSketchSize] = useState(4)
   const [sketchTool, setSketchTool] = useState('pen')
   const [sketchStrokes, setSketchStrokes] = useState([])
+  const [isMathDialogOpen, setIsMathDialogOpen] = useState(false)
   const fileInputRef = useRef(null)
   const sketchCanvasRef = useRef(null)
   const sketchStrokeRef = useRef(null)
+  const mathFieldHostRef = useRef(null)
+  const mathFieldRef = useRef(null)
+  const mathDraftRef = useRef('\\sin(t)')
 
   const editor = useEditor({
     extensions: [
@@ -117,6 +163,78 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
     if (!editor) return
     editor.chain().focus().insertContent({ type: 'mathInline', attrs: { latex } }).run()
   }
+
+  useEffect(() => {
+    const host = mathFieldHostRef.current
+    if (!isMathDialogOpen || !host) return
+
+    const mathField = new MathfieldElement()
+    mathFieldRef.current = mathField
+    mathField.mathVirtualKeyboardPolicy = 'manual'
+    mathField.smartFence = true
+    mathField.smartSuperscript = true
+    mathField.style.width = '100%'
+    mathField.style.fontSize = '22px'
+    mathField.value = mathDraftRef.current || '\\sin(t)'
+
+    const handleInput = () => {
+      mathDraftRef.current = readLatexSafely(mathField, mathDraftRef.current)
+    }
+
+    mathField.addEventListener('input', handleInput)
+    host.appendChild(mathField)
+
+    window.setTimeout(() => {
+      try {
+        mathField.focus()
+        mathField.executeCommand('showVirtualKeyboard')
+      } catch {
+        // noop
+      }
+    }, 0)
+
+    return () => {
+      hideVirtualKeyboardSafely(mathField)
+      try {
+        mathField.removeEventListener('input', handleInput)
+      } catch {
+        // noop
+      }
+      try {
+        host.removeChild(mathField)
+      } catch {
+        // noop
+      }
+      mathFieldRef.current = null
+    }
+  }, [isMathDialogOpen])
+
+  const closeMathDialog = useCallback(() => {
+    hideVirtualKeyboardSafely(mathFieldRef.current)
+    setIsMathDialogOpen(false)
+  }, [])
+
+  const saveMathDialog = useCallback(() => {
+    const nextLatex = readLatexSafely(mathFieldRef.current, mathDraftRef.current || '\\sin(t)')
+    if (!nextLatex) return
+    mathDraftRef.current = nextLatex
+    insertMath(nextLatex)
+    closeMathDialog()
+  }, [closeMathDialog, editor])
+
+  useEffect(() => {
+    if (!isMathDialogOpen) return
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeMathDialog()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isMathDialogOpen, closeMathDialog])
 
   const insertImageByUrl = (rawUrl) => {
     if (!editor) return
@@ -217,9 +335,55 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
 
   if (!editor) return null
 
+  const mathDialog = isMathDialogOpen ? (
+    <div
+      className="math-modal-backdrop"
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div
+        className="math-modal"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="math-close"
+          onClick={closeMathDialog}
+          aria-label="Close"
+        >
+          X
+        </button>
+
+        <div className="math-modal-title">Insert math expression</div>
+
+        <div className="math-modal-actions math-modal-actions-top">
+          <button
+            type="button"
+            className="rt-btn"
+            onClick={saveMathDialog}
+          >
+            Insert
+          </button>
+          <button
+            type="button"
+            className="rt-btn"
+            onClick={closeMathDialog}
+          >
+            Cancel
+          </button>
+        </div>
+
+        <div ref={mathFieldHostRef} className="mathfield-host" />
+        <div className="math-hint">Use English math notation such as {'\\sin(t)'}, {'\\sqrt{x}'}, or {'\\sum_{i=1}^{n} a_i'}.</div>
+      </div>
+    </div>
+  ) : null
+
   return (
-    <div className="rt-wrap">
-      {!readOnly && (
+    <>
+      <div className="rt-wrap">
+        {!readOnly && (
         <div className="rt-toolbar">
           <button
             type="button"
@@ -429,60 +593,29 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
             type="button"
             className="rt-btn"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => insertMath('\\sqrt{x}')}
+            onClick={() => setIsMathDialogOpen(true)}
+            title="Insert a math expression using English notation"
           >
-            &radic;
-          </button>
-          <button
-            type="button"
-            className="rt-btn"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => insertMath('\\frac{a}{b}')}
-          >
-            a/b
-          </button>
-          <button
-            type="button"
-            className="rt-btn"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => insertMath('x^{n}')}
-          >
-            x^n
-          </button>
-          <button
-            type="button"
-            className="rt-btn"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => insertMath('\\sum_{i=1}^{n} i')}
-          >
-            &Sigma;
-          </button>
-          <button
-            type="button"
-            className="rt-btn"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => insertMath('\\int_{a}^{b} f(x)\\,dx')}
-          >
-            &int;
+            Insert Math Expression
           </button>
 
           <div className="rt-hint">Tip: use image URL, sketches, uploads, and tables for graph statements and structured data.</div>
         </div>
-      )}
+        )}
 
-      <div
-        className={`rt-editor ${readOnly ? 'is-readonly' : ''}`}
-        style={{
-          fontFamily: baseFontFamily,
-          fontSize: `${baseFontSize}px`,
-        }}
-      >
-        <EditorContent editor={editor} />
-      </div>
+        <div
+          className={`rt-editor ${readOnly ? 'is-readonly' : ''}`}
+          style={{
+            fontFamily: baseFontFamily,
+            fontSize: `${baseFontSize}px`,
+          }}
+        >
+          <EditorContent editor={editor} />
+        </div>
 
-      {!readOnly && isSketchOpen && (
-        <div className="rt-sketch-overlay" onClick={() => setIsSketchOpen(false)}>
-          <div className="rt-sketch-dialog" onClick={(event) => event.stopPropagation()}>
+        {!readOnly && isSketchOpen && (
+          <div className="rt-sketch-overlay" onClick={() => setIsSketchOpen(false)}>
+            <div className="rt-sketch-dialog" onClick={(event) => event.stopPropagation()}>
             <div className="rt-sketch-top">
               <div className="saved-title">Sketch Pad</div>
               <div className="menu-actions wb-inline-actions">
@@ -576,8 +709,11 @@ export default function DescriptionEditor({ value, onChange, baseFontFamily, bas
               />
             </div>
           </div>
-        </div>
-      )}
-    </div>
+          </div>
+        )}
+      </div>
+
+      {typeof document !== 'undefined' ? createPortal(mathDialog, document.body) : mathDialog}
+    </>
   )
 }

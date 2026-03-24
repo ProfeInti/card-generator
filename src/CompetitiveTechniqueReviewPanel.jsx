@@ -4,7 +4,7 @@ import {
   reviewProposedCompetitiveTechnique,
 } from './data/competitiveTechniquesRepo'
 import { listProfileUsernamesByIds } from './data/profilesRepo'
-import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
+import { getTechniqueTaxonomy, getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 function formatDate(value) {
@@ -150,9 +150,16 @@ export default function CompetitiveTechniqueReviewPanel({ session, onBackToCompe
 
               <div className="collection-toolbar" style={{ marginTop: 12 }}>
                 <div className="saved-title">Technique</div>
+                {(() => {
+                  const taxonomy = getTechniqueTaxonomy(selected, activeLanguage)
+                  return (
+                    <>
                 <div className="saved-empty">{selectedTranslation.name || 'N/A'}</div>
-                <div className="saved-empty">Topic: {selected.topic || 'N/A'} / {selected.subtopic || 'N/A'}</div>
-                <div className="saved-empty">Effect type: {selected.effect_type || 'N/A'}</div>
+                <div className="saved-empty">Topic: {taxonomy.topic || 'N/A'} / {taxonomy.subtopic || 'N/A'}</div>
+                <div className="saved-empty">Effect type: {taxonomy.effectType || 'N/A'}</div>
+                    </>
+                  )
+                })()}
               </div>
 
               <label className="field">

@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listPrivateCompetitiveTechniqueInventory } from './data/competitiveTechniquesRepo'
 import { listProfileUsernamesByIds } from './data/profilesRepo'
-import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
+import { getTechniqueTaxonomy, getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
+import {
+  buildTechniqueCompendium,
+  buildTechniquePreview,
+  getTechniqueBookMeta,
+} from './lib/competitiveTechniqueCompendium'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 function formatDate(value) {
@@ -20,10 +25,10 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState(null)
+  const [selectedBookId, setSelectedBookId] = useState(null)
+  const [screen, setScreen] = useState('books')
   const [activeLanguage, setActiveLanguage] = useState('es')
   const [creatorNamesById, setCreatorNamesById] = useState({})
-
-  const [topicFilter, setTopicFilter] = useState('')
   const [subtopicFilter, setSubtopicFilter] = useState('')
   const [effectTypeFilter, setEffectTypeFilter] = useState('')
   const [nameSearch, setNameSearch] = useState('')
@@ -55,38 +60,25 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
       } catch {
         setCreatorNamesById({})
       }
-
-      if (!selectedId && rows.length > 0) {
-        setSelectedId(rows[0].id)
-      }
-
-      if (selectedId && !rows.some((row) => row.id === selectedId)) {
-        setSelectedId(rows[0]?.id ?? null)
-      }
     } catch (err) {
       setError(err?.message || 'Could not load techniques collection.')
     } finally {
       setLoading(false)
     }
-  }, [selectedId, session.userId])
+  }, [session.userId])
 
   useEffect(() => {
     loadItems()
   }, [loadItems])
 
-  const topics = useMemo(
-    () => [...new Set(items.map((row) => String(row.topic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [items]
-  )
-
   const subtopics = useMemo(
-    () => [...new Set(items.map((row) => String(row.subtopic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [items]
+    () => [...new Set(items.map((row) => String(getTechniqueTaxonomy(row, activeLanguage).subtopic || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [items, activeLanguage]
   )
 
   const effectTypes = useMemo(
-    () => [...new Set(items.map((row) => String(row.effect_type || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
-    [items]
+    () => [...new Set(items.map((row) => String(getTechniqueTaxonomy(row, activeLanguage).effectType || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [items, activeLanguage]
   )
 
   const filteredItems = useMemo(() => {
@@ -94,15 +86,74 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
       const search = normalize(nameSearch)
       if (search) {
         const primaryName = activeLanguage === 'fr' ? row.name_fr || row.name : row.name || row.name_fr
-        const haystack = [primaryName].map((value) => normalize(value)).join(' ')
+        const haystack = [
+          primaryName,
+          getTechniqueTaxonomy(row, activeLanguage).topic,
+          getTechniqueTaxonomy(row, activeLanguage).subtopic,
+          getTechniqueTaxonomy(row, activeLanguage).effectType,
+          buildTechniquePreview(row, activeLanguage, 260),
+        ].map((value) => normalize(value)).join(' ')
         if (!haystack.includes(search)) return false
       }
-      if (topicFilter && normalize(row.topic) !== normalize(topicFilter)) return false
-      if (subtopicFilter && normalize(row.subtopic) !== normalize(subtopicFilter)) return false
-      if (effectTypeFilter && normalize(row.effect_type) !== normalize(effectTypeFilter)) return false
+      const taxonomy = getTechniqueTaxonomy(row, activeLanguage)
+      if (subtopicFilter && normalize(taxonomy.subtopic) !== normalize(subtopicFilter)) return false
+      if (effectTypeFilter && normalize(taxonomy.effectType) !== normalize(effectTypeFilter)) return false
       return true
     })
-  }, [items, nameSearch, topicFilter, subtopicFilter, effectTypeFilter, activeLanguage])
+  }, [items, nameSearch, subtopicFilter, effectTypeFilter, activeLanguage])
+
+  const books = useMemo(() => buildTechniqueCompendium(filteredItems, activeLanguage), [filteredItems, activeLanguage])
+  const selectedBook = useMemo(() => books.find((book) => book.id === selectedBookId) || null, [books, selectedBookId])
+  const isSearchMode = Boolean(normalize(nameSearch))
+  const visibleTechniques = selectedBook?.items || []
+
+  useEffect(() => {
+    if (screen === 'books') return
+
+    if (screen === 'techniques') {
+      const hasBook = books.some((book) => book.id === selectedBookId)
+      if (!hasBook) {
+        setSelectedBookId(null)
+        setScreen('books')
+      }
+      return
+    }
+
+    if (screen === 'detail') {
+      const hasSelected = filteredItems.some((row) => row.id === selectedId)
+      if (!hasSelected) {
+        setSelectedId(null)
+        setScreen(selectedBookId ? 'techniques' : 'books')
+      }
+    }
+  }, [books, filteredItems, screen, selectedBookId, selectedId])
+
+  const openBook = (bookId) => {
+    setSelectedBookId(bookId)
+    setSelectedId(null)
+    setScreen('techniques')
+  }
+
+  const openTechnique = (item) => {
+    setSelectedBookId(getTechniqueBookMeta(item, activeLanguage).id)
+    setSelectedId(item.id)
+    setScreen('detail')
+  }
+
+  const goBack = () => {
+    if (screen === 'detail') {
+      setScreen(selectedBookId ? 'techniques' : 'books')
+      return
+    }
+
+    if (screen === 'techniques') {
+      setSelectedId(null)
+      setScreen('books')
+    }
+  }
+
+  const resultsLabel = isSearchMode ? 'Search Results' : 'My Technique Books'
+  const isBooksStage = screen === 'books' && !isSearchMode
 
   return (
     <div className="page">
@@ -125,9 +176,9 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
         </div>
       </div>
 
-      <div className="competitive-layout">
+      <div className={`competitive-layout ${isBooksStage ? 'is-books' : ''}`}>
         <div className="assets-panel">
-          <div className="saved-title">My Approved Techniques</div>
+          <div className="saved-title">{resultsLabel}</div>
 
           <div className="auth-tabs" style={{ marginBottom: 12 }}>
             {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
@@ -147,19 +198,12 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
               <span>Name</span>
               <input
                 value={nameSearch}
-                onChange={(e) => setNameSearch(e.target.value)}
+                onChange={(e) => {
+                  setNameSearch(e.target.value)
+                  setScreen('books')
+                }}
                 placeholder={activeLanguage === 'fr' ? 'Search French name' : 'Search Spanish name'}
               />
-            </label>
-
-            <label className="field">
-              <span>Topic</span>
-              <select value={topicFilter} onChange={(e) => setTopicFilter(e.target.value)}>
-                <option value="">All</option>
-                {topics.map((value) => (
-                  <option key={value} value={value}>{value}</option>
-                ))}
-              </select>
             </label>
 
             <label className="field">
@@ -187,39 +231,117 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
             </button>
           </div>
 
-          <div className="saved-empty">This collection includes your approved techniques plus approved copies you collected from the global catalog.</div>
-
-          <div className="saved-list competitive-list" style={{ marginTop: 10 }}>
-            {loading && <div className="saved-empty">Loading collection...</div>}
-            {!loading && filteredItems.length === 0 && <div className="saved-empty">No techniques in your collection yet.</div>}
-            {!loading && filteredItems.map((item) => (
-              <div key={item.id} className="saved-item">
-                <div className="saved-item-name">{getTechniqueTranslation(item, activeLanguage).name || 'Untitled technique'}</div>
-                <div className="saved-item-tags">ES: {item.name || 'N/A'}</div>
-                <div className="saved-item-tags">FR: {item.name_fr || item.name || 'N/A'}</div>
-                <div className="saved-item-date">Added: {formatDate(item.collected_at)}</div>
-                <div className="saved-item-tags">
-                  Scope: {item.is_owner_copy ? 'My approved technique' : 'My collection copy'}
-                </div>
-                <div className="saved-item-tags">
-                  Original author: {creatorNamesById[item.created_by] || item.created_by || 'Unknown'}
-                </div>
-                {item.created_by && item.created_by !== session.userId && (
-                  <div className="saved-item-tags">Copied from another creator</div>
-                )}
-                <div className="saved-item-tags">Topic: {item.topic || 'N/A'} / {item.subtopic || 'N/A'}</div>
-                <button type="button" className="btn" onClick={() => setSelectedId(item.id)}>
-                  View
-                </button>
-              </div>
-            ))}
+          <div className="saved-empty">
+            {isSearchMode
+              ? 'El buscador muestra tecnicas relacionadas en lugar de libros.'
+              : 'Primero se muestran solo los libros-compendio para mantener la seccion limpia.'}
           </div>
+
+          {!isBooksStage && <div className="saved-list competitive-list" style={{ marginTop: 10 }}>
+            {loading && <div className="saved-empty">Loading collection...</div>}
+            {!loading && isSearchMode && filteredItems.length === 0 && <div className="saved-empty">No matching techniques found.</div>}
+            {!loading && isSearchMode && filteredItems.map((item) => (
+              <button key={item.id} type="button" className="technique-preview-card" onClick={() => openTechnique(item)}>
+                {(() => {
+                  const taxonomy = getTechniqueTaxonomy(item, activeLanguage)
+                  return (
+                    <>
+                <div className="technique-preview-card-top">
+                  <span className="technique-preview-card-type">{taxonomy.effectType || 'Technique'}</span>
+                  <span className="technique-preview-card-meta">{taxonomy.topic || 'Sin tema'}</span>
+                </div>
+                <div className="technique-preview-card-title">{getTechniqueTranslation(item, activeLanguage).name || 'Untitled technique'}</div>
+                <div className="technique-preview-card-body">{buildTechniquePreview(item, activeLanguage, 180)}</div>
+                    </>
+                  )
+                })()}
+              </button>
+            ))}
+          </div>}
         </div>
 
         <div className="panel">
-          {!selected && <div className="saved-empty">Select a technique from your collection.</div>}
+          {screen !== 'books' && (
+            <div className="saved-item-actions" style={{ marginBottom: 14 }}>
+              <button type="button" className="btn" onClick={goBack}>
+                Back
+              </button>
+            </div>
+          )}
 
-          {selected && (
+          {screen === 'books' && (
+            <>
+              {!isSearchMode && (
+                <>
+                  <div className="saved-title">Libros-Compendio</div>
+                  <div className="saved-empty">Ordenados alfabeticamente y presentados a pantalla completa para una exploracion mas limpia.</div>
+                  <div className="compendium-book-grid" style={{ marginTop: 16 }}>
+                    {loading && <div className="saved-empty">Loading collection...</div>}
+                    {!loading && books.length === 0 && <div className="saved-empty">No techniques in your collection yet.</div>}
+                    {!loading && books.map((book) => (
+                      <div key={book.id} className="saved-item compendium-book-card">
+                        <div className="compendium-book-cover">
+                          <div>
+                            <div className="compendium-book-kicker">Collection Book</div>
+                            <div className="compendium-book-title">{book.title}</div>
+                          </div>
+                          <div className="compendium-book-summary">
+                            Tecnicas agrupadas por tema con acceso directo a sus vistas de consulta.
+                          </div>
+                          <div className="compendium-book-footer">
+                            <div className="compendium-book-stats">
+                              <div className="compendium-book-stat">{book.count} tecnicas</div>
+                              <div className="compendium-book-stat">Subtopics: {book.subtopics.join(', ') || 'N/A'}</div>
+                            </div>
+                            <button type="button" className="btn" onClick={() => openBook(book.id)}>
+                              Open Book
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {isSearchMode && (
+                <>
+                  <div className="saved-title">Search Results</div>
+                  <div className="saved-empty">Selecciona una tecnica del buscador para abrir su detalle.</div>
+                </>
+              )}
+            </>
+          )}
+
+          {screen === 'techniques' && selectedBook && (
+            <>
+              <div className="saved-title">Techniques In {selectedBook.title}</div>
+              <div className="saved-empty">Esta pantalla muestra solo las tecnicas del libro seleccionado.</div>
+
+              <div className="technique-card-grid" style={{ marginTop: 12 }}>
+                {visibleTechniques.map((item) => {
+                  const translation = getTechniqueTranslation(item, activeLanguage)
+                  const taxonomy = getTechniqueTaxonomy(item, activeLanguage)
+
+                  return (
+                    <button key={item.id} type="button" className="technique-preview-card" onClick={() => openTechnique(item)}>
+                      <div className="technique-preview-card-top">
+                        <span className="technique-preview-card-type">{taxonomy.effectType || 'Technique'}</span>
+                        <span className="technique-preview-card-meta">{taxonomy.subtopic || 'General'}</span>
+                      </div>
+                      <div className="technique-preview-card-title">{translation.name || 'Untitled technique'}</div>
+                      <div className="technique-preview-card-body">{buildTechniquePreview(item, activeLanguage, 220)}</div>
+                      <div className="technique-preview-card-footer">
+                        <span>{item.is_owner_copy ? 'Own approved' : 'Collection copy'}</span>
+                        <span>{formatDate(item.collected_at)}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {screen === 'detail' && selected && (
             <>
               <div className="saved-title">Technique Detail</div>
               <div className="saved-item-date">Added: {formatDate(selected.collected_at)}</div>
@@ -250,9 +372,16 @@ export default function CompetitiveTechniquesCollection({ session, onBackToCompe
 
               <div className="collection-toolbar" style={{ marginTop: 12 }}>
                 <div className="saved-title">Technique</div>
+                {(() => {
+                  const taxonomy = getTechniqueTaxonomy(selected, activeLanguage)
+                  return (
+                    <>
                 <div className="saved-empty">Name: {selectedTranslation.name || 'N/A'}</div>
-                <div className="saved-empty">Topic: {selected.topic || 'N/A'} / {selected.subtopic || 'N/A'}</div>
-                <div className="saved-empty">Effect type: {selected.effect_type || 'N/A'}</div>
+                <div className="saved-empty">Topic: {taxonomy.topic || 'N/A'} / {taxonomy.subtopic || 'N/A'}</div>
+                <div className="saved-empty">Effect type: {taxonomy.effectType || 'N/A'}</div>
+                    </>
+                  )
+                })()}
               </div>
 
               <label className="field">

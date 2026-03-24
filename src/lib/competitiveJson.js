@@ -1,4 +1,5 @@
 import { isLikelyHtml, normalizeMathHtmlInput } from './mathHtml'
+import { getTechniqueTaxonomyNotes, getTechniqueTaxonomyReference } from './competitiveTechniqueTaxonomy'
 
 const INTICORE_FORMAT = 'inticore-competitive-v1'
 
@@ -46,26 +47,45 @@ export function normalizeCompetitiveRichField(value) {
 }
 
 export function buildTechniquesTemplateJson() {
+  const taxonomyNotes = getTechniqueTaxonomyNotes()
+  const taxonomyReference = getTechniqueTaxonomyReference()
+
   return {
     format: INTICORE_FORMAT,
     entity: 'competitive_technique_proposals',
     version: 1,
+    officialTaxonomy: taxonomyReference,
     notes: [
       'Use exactly this structure whenever possible: root object with "format", "entity", "version", and a "techniques" array.',
       '"version" is required and must always be present in the root object.',
       'Each technique must be one object inside the "techniques" array.',
-      'Recommended canonical field names are exactly these: "name", "nameFr", "topic", "subtopic", "effectType", "status", "effectDescription", "effectDescriptionFr", "workedExample", "workedExampleFr".',
-      'Spanish "name", Spanish "effectDescription", French "nameFr", and French "effectDescriptionFr" are required.',
+      'The root field "officialTaxonomy" contains the complete current official taxonomy with every allowed topicKey, subtopicKey, and effectTypeKey.',
+      'Always select topicKey, subtopicKey, and effectTypeKey directly from "officialTaxonomy".',
+      'Recommended canonical field names are exactly these: "name", "nameFr", "topicKey", "topic", "topicFr", "subtopicKey", "subtopic", "subtopicFr", "effectTypeKey", "effectType", "effectTypeFr", "status", "effectDescription", "effectDescriptionFr", "workedExample", "workedExampleFr".',
+      'Spanish "name", Spanish "effectDescription", French "nameFr", French "effectDescriptionFr", and the taxonomy pair "topic/topicFr", "subtopic/subtopicFr", "effectType/effectTypeFr" are required.',
       'French fields must preserve the same level of detail, precision, and mathematical clarity as the Spanish fields. Do not provide a shorter, poorer, or oversimplified French version.',
       '"status" must be one of: draft, proposed, approved, rejected.',
-      '"topic", "subtopic", and "effectType" are optional but strongly recommended because they make the technique searchable and reusable in the collection.',
+      '"topicKey", "subtopicKey", and "effectTypeKey" must use the predefined taxonomy keys from the app.',
+      '"topic", "topicFr", "subtopic", "subtopicFr", "effectType", and "effectTypeFr" define the bilingual taxonomy and are required for catalog organization, searching, and compendium grouping.',
+      'The taxonomy is restrictive, not suggestive: do not invent new topics, subtopics, effect types, or keys.',
+      'If a technique does not fit an existing topicKey/subtopicKey/effectTypeKey exactly, the JSON must be corrected to match the official taxonomy before import.',
+      'Do not invent free taxonomy values. Topic, subtopic, and effect type must match the predefined controlled vocabulary used by the app.',
+      'Invalid taxonomy keys such as non-existent topics or subtopics will cause the import entry to be skipped.',
+      'The JSON must stay internally consistent: topicKey must match topic/topicFr, subtopicKey must belong to that topic, and effectTypeKey must match effectType/effectTypeFr.',
+      'Before generating or exporting JSON, verify that the selected topic and subtopic exist in the current official taxonomy of the app.',
+      `Official topics taxonomy: ${taxonomyNotes.topics}.`,
+      `Official effect types taxonomy: ${taxonomyNotes.effectTypes}.`,
       '"effectDescription" must define the mathematical technique itself as a reusable transformation, criterion, strategy, or operation. It must not be only an example, only a result, or only a motivational note.',
       '"effectDescription" should explain what the technique does, when it applies, and what kind of transformation or conclusion it produces.',
       '"effectDescription" must not be a full exercise solution tied to a single statement. The goal is to describe a reusable technique, not to solve one isolated problem.',
+      'Each technique must read like a complete but minimal flashcard: self-contained, mathematically sufficient, and immediately usable without adding long pedagogical explanation.',
+      'Include every essential condition, transformation, criterion, or conclusion needed for the technique to be correct, but remove any wording that does not contribute directly to using or understanding the technique.',
+      'Do not cut important mathematical content, but do cut repetition, motivational text, conversational phrasing, and extended explanations that are not essential to the core technique.',
       'Write the content with the minimum number of words needed to remain clear. Prefer concise mathematical phrasing and direct formulas over long explanations.',
+      'If the same idea can be expressed faithfully in a shorter mathematical form, prefer the shorter form.',
       'When a condition, transformation, or conclusion is best expressed symbolically, use the formula plus only the shortest necessary clarifying text.',
       '"workedExample", when present, should demonstrate the technique on a concrete mathematical expression or situation and should remain consistent with the technique definition.',
-      '"workedExample" should also stay brief: enough to show the transformation clearly, without turning into a long derivation unless that brevity would reduce clarity.',
+      '"workedExample" should also stay brief: enough to show the transformation clearly, without turning into a long derivation unless shortening it would remove essential mathematical meaning.',
       'Any field containing equations must be written in a format that renders correctly in the app after import. Use editor HTML or plain text with every mathematical expression wrapped in inline LaTeX between $...$.',
       'Do not leave equations, symbolic transformations, or mathematical equalities as ambiguous plain text when they are meant to render as math.',
       'Use standard LaTeX notation inside $...$. Prefer "$x^2+6x+5=0$" over "x^2+6x+5=0" when the content is mathematical.',
@@ -83,9 +103,15 @@ export function buildTechniquesTemplateJson() {
       {
         name: 'Completar el cuadrado',
         nameFr: 'Completer le carre',
-        topic: 'Algebra',
-        subtopic: 'Ecuaciones cuadraticas',
-        effectType: 'transform',
+        topicKey: 'algebra',
+        topic: 'Álgebra',
+        topicFr: 'Algèbre',
+        subtopicKey: 'algebra_equations',
+        subtopic: 'Ecuaciones',
+        subtopicFr: 'Équations',
+        effectTypeKey: 'transformation',
+        effectType: 'Transformación',
+        effectTypeFr: 'Transformation',
         status: 'proposed',
         effectDescription: '<p>Reescribe una expresion cuadratica para obtener una forma del tipo <span data-type="math-inline" data-latex="(x+a)^2=b"></span>, agregando y compensando el termino necesario cuando sea valido hacerlo.</p>',
         effectDescriptionFr: '<p>Reecrire une expression quadratique sous une forme du type <span data-type="math-inline" data-latex="(x+a)^2=b"></span> en ajoutant puis en compensant le terme necessaire lorsque cela est valide.</p>',

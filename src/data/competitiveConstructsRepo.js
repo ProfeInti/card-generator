@@ -9,7 +9,7 @@ const CONSTRUCT_STEP_SELECT_FIELDS =
 const EXERCISE_MIN_SELECT_FIELDS =
   'id, source_title, source_work_title, source_author, source_location, page_number, exercise_number, statement, topic, subtopic, difficulty, status'
 const TECHNIQUE_MIN_SELECT_FIELDS =
-  'id, name, topic, subtopic, effect_type, effect_description, status'
+  'id, name, name_fr, topic, topic_fr, subtopic, subtopic_fr, effect_type, effect_type_fr, effect_description, effect_description_fr, status'
 
 export async function createConstruct(payload) {
   const { data, error } = await supabase
@@ -183,7 +183,7 @@ export async function getConstructDetail(constructId) {
     if (missingTechniqueIds.length > 0) {
       const { data: catalogTechniques, error: catalogTechniquesError } = await supabase
         .from('competitive_technique_catalog')
-        .select('id, legacy_technique_id, name, topic, subtopic, effect_type, effect_description, status')
+        .select('id, legacy_technique_id, name, name_fr, topic, topic_fr, subtopic, subtopic_fr, effect_type, effect_type_fr, effect_description, effect_description_fr, status')
         .in('legacy_technique_id', missingTechniqueIds)
 
       if (catalogTechniquesError) throw catalogTechniquesError
@@ -193,10 +193,15 @@ export async function getConstructDetail(constructId) {
         techniquesById[row.legacy_technique_id] = {
           id: row.legacy_technique_id,
           name: row.name,
+          name_fr: row.name_fr,
           topic: row.topic,
+          topic_fr: row.topic_fr,
           subtopic: row.subtopic,
+          subtopic_fr: row.subtopic_fr,
           effect_type: row.effect_type,
+          effect_type_fr: row.effect_type_fr,
           effect_description: row.effect_description,
+          effect_description_fr: row.effect_description_fr,
           status: row.status,
         }
       })

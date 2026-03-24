@@ -6,7 +6,21 @@ import {
   listEditableCompetitiveTechniqueProposals,
   updateOwnCompetitiveTechniqueProposal,
 } from './data/competitiveTechniquesRepo'
-import { getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
+import { getTechniqueTaxonomy, getTechniqueTranslation, TECHNIQUE_LANGUAGE_OPTIONS } from './lib/competitiveTechniqueLocale'
+import {
+  buildTechniqueCompendium,
+  buildTechniquePreview,
+  getTechniqueBookMeta,
+} from './lib/competitiveTechniqueCompendium'
+import {
+  canonicalizeTechniqueTaxonomyInput,
+  getTechniqueEffectTypeOptions,
+  getTechniqueSubtopicOptions,
+  getTechniqueTaxonomyNotes,
+  getTechniqueTaxonomySelection,
+  getTechniqueTopicOptions,
+  resolveTechniqueTaxonomyFromIds,
+} from './lib/competitiveTechniqueTaxonomy'
 import { hasMeaningfulHtmlContent, normalizeMathHtmlInput } from './lib/mathHtml'
 import {
   buildTechniquesTemplateJson,
@@ -20,16 +34,8 @@ const STATUS_OPTIONS = ['draft', 'proposed', 'approved', 'rejected']
 const STUDENT_STATUS_OPTIONS = ['draft', 'proposed']
 
 const EMPTY_TRANSLATIONS = {
-  es: {
-    name: '',
-    effectDescription: '',
-    workedExample: '',
-  },
-  fr: {
-    name: '',
-    effectDescription: '',
-    workedExample: '',
-  },
+  es: { name: '', effectDescription: '', workedExample: '' },
+  fr: { name: '', effectDescription: '', workedExample: '' },
 }
 
 function toInputValue(value) {
@@ -42,15 +48,15 @@ function normalizeKey(value) {
 }
 
 function buildTechniqueImportKey(values) {
-  return [values?.name, values?.topic, values?.subtopic].map(normalizeKey).join('||')
+  return [values?.name, values?.topic, values?.subtopic, values?.effectType || values?.effect_type].map(normalizeKey).join('||')
 }
 
 function buildEmptyForm() {
   return {
     status: 'draft',
-    topic: '',
-    subtopic: '',
-    effectType: '',
+    topicId: '',
+    subtopicId: '',
+    effectTypeId: '',
     translations: {
       es: { ...EMPTY_TRANSLATIONS.es },
       fr: { ...EMPTY_TRANSLATIONS.fr },
@@ -60,12 +66,13 @@ function buildEmptyForm() {
 
 function toFormState(row, role) {
   if (!row || typeof row !== 'object') return buildEmptyForm()
+  const taxonomySelection = getTechniqueTaxonomySelection(row, { fallbackPending: true })
 
   return {
     status: (role === 'teacher' ? STATUS_OPTIONS : STUDENT_STATUS_OPTIONS).includes(row.status) ? row.status : 'draft',
-    topic: toInputValue(row.topic),
-    subtopic: toInputValue(row.subtopic),
-    effectType: toInputValue(row.effect_type),
+    topicId: toInputValue(taxonomySelection.topicId),
+    subtopicId: toInputValue(taxonomySelection.subtopicId),
+    effectTypeId: toInputValue(taxonomySelection.effectTypeId),
     translations: {
       es: {
         name: toInputValue(row.name),
@@ -91,6 +98,7 @@ function toPayload(form, userId, role) {
   const status = allowedStatuses.includes(form.status) ? form.status : 'draft'
   const spanish = form.translations?.es || EMPTY_TRANSLATIONS.es
   const french = form.translations?.fr || EMPTY_TRANSLATIONS.fr
+  const taxonomy = resolveTechniqueTaxonomyFromIds(form)
 
   return {
     created_by: userId,
@@ -99,9 +107,12 @@ function toPayload(form, userId, role) {
     approved_at: role === 'teacher' && status === 'approved' ? new Date().toISOString() : null,
     name: String(spanish.name || '').trim(),
     name_fr: toNullableText(french.name),
-    topic: toNullableText(form.topic),
-    subtopic: toNullableText(form.subtopic),
-    effect_type: toNullableText(form.effectType),
+    topic: toNullableText(taxonomy.topic),
+    topic_fr: toNullableText(taxonomy.topicFr),
+    subtopic: toNullableText(taxonomy.subtopic),
+    subtopic_fr: toNullableText(taxonomy.subtopicFr),
+    effect_type: toNullableText(taxonomy.effectType),
+    effect_type_fr: toNullableText(taxonomy.effectTypeFr),
     effect_description: String(spanish.effectDescription || '').trim(),
     effect_description_fr: String(french.effectDescription || '').trim() || null,
     worked_example: String(spanish.workedExample || '').trim() || null,
@@ -116,23 +127,42 @@ function formatDate(dateValue) {
   return parsed.toLocaleString()
 }
 
+function normalize(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
 export default function CompetitiveTechniqueEditor({ session, onBackToCompetitive, onLogout }) {
   const role = session.role === 'teacher' ? 'teacher' : 'student'
   const allowedStatusOptions = role === 'teacher' ? STATUS_OPTIONS : STUDENT_STATUS_OPTIONS
   const [techniqueId, setTechniqueId] = useState(null)
+  const [selectedRecordId, setSelectedRecordId] = useState(null)
+  const [selectedBookId, setSelectedBookId] = useState(null)
+  const [screen, setScreen] = useState('books')
+  const [isCreatingNew, setIsCreatingNew] = useState(false)
   const [form, setForm] = useState(buildEmptyForm)
   const [activeLanguage, setActiveLanguage] = useState('es')
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const importFileRef = useRef(null)
   const [notice, setNotice] = useState('')
+  const [nameSearch, setNameSearch] = useState('')
+  const importFileRef = useRef(null)
+  const taxonomyNotes = useMemo(() => getTechniqueTaxonomyNotes(), [])
+  const topicOptions = useMemo(() => getTechniqueTopicOptions(activeLanguage), [activeLanguage])
+  const subtopicOptions = useMemo(() => getTechniqueSubtopicOptions(form.topicId, activeLanguage), [form.topicId, activeLanguage])
+  const effectTypeOptions = useMemo(() => getTechniqueEffectTypeOptions(activeLanguage), [activeLanguage])
 
   const canSave = useMemo(() => {
     const spanish = form.translations?.es || EMPTY_TRANSLATIONS.es
-    return Boolean(String(spanish.name || '').trim() && hasMeaningfulHtmlContent(spanish.effectDescription))
-  }, [form.translations])
+    return Boolean(
+      String(spanish.name || '').trim()
+      && hasMeaningfulHtmlContent(spanish.effectDescription)
+      && String(form.topicId || '').trim()
+      && String(form.subtopicId || '').trim()
+      && String(form.effectTypeId || '').trim()
+    )
+  }, [form.effectTypeId, form.subtopicId, form.topicId, form.translations])
 
   const loadTechniques = useCallback(async () => {
     setLoading(true)
@@ -152,25 +182,107 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     loadTechniques()
   }, [loadTechniques])
 
-  const startNewDraft = () => {
+  const filteredRecords = useMemo(() => {
+    return records.filter((row) => {
+      const search = normalize(nameSearch)
+      if (!search) return true
+
+      const haystack = [
+        row.name,
+        row.name_fr,
+        row.topic,
+        row.topic_fr,
+        row.subtopic,
+        row.subtopic_fr,
+        row.effect_type,
+        row.effect_type_fr,
+        buildTechniquePreview(row, activeLanguage, 260),
+      ].map((value) => normalize(value)).join(' ')
+
+      return haystack.includes(search)
+    })
+  }, [records, nameSearch, activeLanguage])
+
+  const books = useMemo(() => buildTechniqueCompendium(filteredRecords, activeLanguage), [filteredRecords, activeLanguage])
+  const selectedBook = useMemo(() => books.find((book) => book.id === selectedBookId) || null, [books, selectedBookId])
+  const isSearchMode = Boolean(normalize(nameSearch))
+  const activeTranslation = form.translations?.[activeLanguage] || EMPTY_TRANSLATIONS.es
+  const isBooksStage = screen === 'books' && !isSearchMode
+
+  useEffect(() => {
+    if (screen === 'books') return
+
+    if (screen === 'techniques') {
+      const hasBook = books.some((book) => book.id === selectedBookId)
+      if (!hasBook) {
+        setSelectedBookId(null)
+        setScreen('books')
+      }
+      return
+    }
+
+    if (screen === 'editor') {
+      if (isCreatingNew) return
+      const hasSelected = filteredRecords.some((row) => row.id === selectedRecordId)
+      if (!hasSelected) {
+        setSelectedRecordId(null)
+        setTechniqueId(null)
+        setScreen(selectedBookId ? 'techniques' : 'books')
+      }
+    }
+  }, [books, filteredRecords, isCreatingNew, screen, selectedBookId, selectedRecordId])
+
+  const startNewDraft = (bookId = selectedBookId) => {
+    const book = books.find((item) => item.id === bookId) || null
+    const seedTechnique = book?.items?.[0] || null
+    const seedTaxonomyEs = getTechniqueTaxonomy(seedTechnique, 'es')
+    const seedTaxonomyFr = getTechniqueTaxonomy(seedTechnique, 'fr')
     setTechniqueId(null)
-    setForm(buildEmptyForm())
+    setSelectedRecordId(null)
+    setSelectedBookId(bookId || null)
+    setIsCreatingNew(true)
+    setForm({
+      ...buildEmptyForm(),
+      ...getTechniqueTaxonomySelection({
+        topic: seedTaxonomyEs.topic || '',
+        topic_fr: seedTaxonomyFr.topic || '',
+        subtopic: seedTaxonomyEs.subtopic || '',
+        subtopic_fr: seedTaxonomyFr.subtopic || '',
+        effect_type: seedTaxonomyEs.effectType || '',
+        effect_type_fr: seedTaxonomyFr.effectType || '',
+      }, { fallbackPending: true }),
+    })
     setActiveLanguage('es')
     setError('')
     setNotice('Ready to create a new technique draft.')
+    setScreen('editor')
   }
 
   const loadIntoForm = (row) => {
     const reviewedRow = role === 'student' && ['approved', 'rejected'].includes(String(row?.status || '').toLowerCase())
     setTechniqueId(row.id)
+    setSelectedRecordId(row.id)
+    setSelectedBookId(getTechniqueBookMeta(row, activeLanguage).id)
+    setIsCreatingNew(false)
     setForm(toFormState(row, role))
     setActiveLanguage('es')
     setError('')
     setNotice(reviewedRow ? 'Reviewed proposal loaded as draft. You can edit and propose again.' : 'Technique proposal loaded for editing.')
+    setScreen('editor')
   }
 
   const onFormChange = (key, value) => {
-    setForm((prev) => ({ ...prev, [key]: value }))
+    setForm((prev) => {
+      if (key === 'topicId') {
+        return {
+          ...prev,
+          topicId: value,
+          subtopicId: '',
+        }
+      }
+
+      return { ...prev, [key]: value }
+    })
   }
 
   const onTranslationChange = (language, key, value) => {
@@ -191,16 +303,15 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     setNotice('')
 
     try {
-      if (!techniqueId) {
-        throw new Error('Load a proposal with Edit before exporting JSON.')
-      }
+      if (!techniqueId) throw new Error('Load a proposal before exporting JSON.')
 
       const item = {
         name: form.translations?.es?.name || '',
         nameFr: form.translations?.fr?.name || '',
-        topic: form.topic || '',
-        subtopic: form.subtopic || '',
-        effectType: form.effectType || '',
+        topicKey: form.topicId || '',
+        subtopicKey: form.subtopicId || '',
+        effectTypeKey: form.effectTypeId || '',
+        ...resolveTechniqueTaxonomyFromIds(form),
         status: form.status || 'draft',
         effectDescription: form.translations?.es?.effectDescription || '',
         effectDescriptionFr: form.translations?.fr?.effectDescription || '',
@@ -254,17 +365,26 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
       let createdCount = 0
       let updatedCount = 0
       let skippedCount = 0
+      let lastImportedRow = null
 
       for (const item of importedRecords) {
         const importedStatus = toAllowedStatus(item?.status, allowedStatuses, 'proposed')
+        const taxonomy = canonicalizeTechniqueTaxonomyInput(item)
+        if (taxonomy.error) {
+          skippedCount += 1
+          continue
+        }
         const payload = {
           created_by: session.userId,
           status: importedStatus,
           name: String(item?.name || '').trim(),
           name_fr: toNullableText(item?.nameFr),
-          topic: toNullableText(item?.topic),
-          subtopic: toNullableText(item?.subtopic),
-          effect_type: toNullableText(item?.effectType),
+          topic: toNullableText(taxonomy.topic),
+          topic_fr: toNullableText(taxonomy.topicFr),
+          subtopic: toNullableText(taxonomy.subtopic),
+          subtopic_fr: toNullableText(taxonomy.subtopicFr),
+          effect_type: toNullableText(taxonomy.effectType),
+          effect_type_fr: toNullableText(taxonomy.effectTypeFr),
           effect_description: normalizeCompetitiveRichField(item?.effectDescription),
           effect_description_fr: normalizeCompetitiveRichField(item?.effectDescriptionFr) || null,
           worked_example: normalizeCompetitiveRichField(item?.workedExample) || null,
@@ -274,7 +394,17 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
         }
 
         const importKey = buildTechniqueImportKey(item)
-        if (!payload.name || !hasMeaningfulHtmlContent(payload.effect_description) || !importKey) {
+        if (
+          !payload.name
+          || !hasMeaningfulHtmlContent(payload.effect_description)
+          || !payload.topic
+          || !payload.topic_fr
+          || !payload.subtopic
+          || !payload.subtopic_fr
+          || !payload.effect_type
+          || !payload.effect_type_fr
+          || !importKey
+        ) {
           skippedCount += 1
           continue
         }
@@ -290,10 +420,12 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
           if (existing) {
             const row = await updateOwnCompetitiveTechniqueProposal(existing.id, session.userId, payload)
             existingByKey.set(importKey, row)
+            lastImportedRow = row
             updatedCount += 1
           } else {
             const row = await createCompetitiveTechniqueProposal(payload)
             existingByKey.set(importKey, row)
+            lastImportedRow = row
             createdCount += 1
           }
         } catch {
@@ -303,7 +435,16 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
 
       if (!createdCount && !updatedCount) throw new Error('No valid technique entries found to import.')
       await loadTechniques()
-      setNotice(`Technique import complete. Created: ${createdCount}, updated: ${updatedCount}, skipped: ${skippedCount}.`)
+      if (lastImportedRow) {
+        setTechniqueId(lastImportedRow.id)
+        setSelectedRecordId(lastImportedRow.id)
+        setSelectedBookId(getTechniqueBookMeta(lastImportedRow, activeLanguage).id)
+        setIsCreatingNew(false)
+        setForm(toFormState(lastImportedRow, role))
+        setActiveLanguage('es')
+        setScreen('editor')
+      }
+      setNotice(`Technique import complete. Created: ${createdCount}, updated: ${updatedCount}, skipped: ${skippedCount}. Imported technique loaded in the editor.`)
     } catch (err) {
       setError(err?.message || 'Could not import techniques JSON.')
     } finally {
@@ -321,13 +462,13 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
 
     try {
       await deleteOwnCompetitiveTechniqueProposal(row.id, session.userId)
-      if (techniqueId === row.id) {
-        setTechniqueId(null)
-        setForm(buildEmptyForm())
-        setActiveLanguage('es')
-      }
+      setTechniqueId(null)
+      setSelectedRecordId(null)
+      setIsCreatingNew(false)
+      setForm(buildEmptyForm())
       await loadTechniques()
       setNotice('Technique proposal deleted successfully.')
+      setScreen(selectedBookId ? 'techniques' : 'books')
     } catch (err) {
       setError(err?.message || 'Could not delete technique proposal.')
     } finally {
@@ -343,21 +484,25 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     try {
       const payload = toPayload(form, session.userId, role)
 
-      if (!payload.name) {
-        throw new Error('Spanish technique name is required.')
-      }
-
-      if (!hasMeaningfulHtmlContent(payload.effect_description)) {
-        throw new Error('Spanish effect description is required.')
+      if (!payload.name) throw new Error('Spanish technique name is required.')
+      if (!hasMeaningfulHtmlContent(payload.effect_description)) throw new Error('Spanish effect description is required.')
+      if (!payload.topic || !payload.topic_fr || !payload.subtopic || !payload.subtopic_fr || !payload.effect_type || !payload.effect_type_fr) {
+        throw new Error('Topic, subtopic, and effect type are required in both Spanish and French.')
       }
 
       if (techniqueId) {
         const row = await updateOwnCompetitiveTechniqueProposal(techniqueId, session.userId, payload)
         setTechniqueId(row.id)
+        setSelectedRecordId(row.id)
+        setSelectedBookId(getTechniqueBookMeta(row, activeLanguage).id)
+        setIsCreatingNew(false)
         setForm(toFormState(row, role))
       } else {
         const row = await createCompetitiveTechniqueProposal(payload)
         setTechniqueId(row.id)
+        setSelectedRecordId(row.id)
+        setSelectedBookId(getTechniqueBookMeta(row, activeLanguage).id)
+        setIsCreatingNew(false)
         setForm(toFormState(row, role))
       }
 
@@ -370,7 +515,23 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     }
   }
 
-  const activeTranslation = form.translations?.[activeLanguage] || EMPTY_TRANSLATIONS.es
+  const openBook = (bookId) => {
+    setSelectedBookId(bookId)
+    setSelectedRecordId(null)
+    setScreen('techniques')
+  }
+
+  const goBack = () => {
+    if (screen === 'editor') {
+      setScreen(selectedBookId ? 'techniques' : 'books')
+      return
+    }
+
+    if (screen === 'techniques') {
+      setScreen('books')
+      setSelectedRecordId(null)
+    }
+  }
 
   return (
     <div className="page">
@@ -387,12 +548,12 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
         </div>
       </div>
 
-      <div className="competitive-layout">
+      <div className={`competitive-layout ${isBooksStage ? 'is-books' : ''}`}>
         <div className="assets-panel">
-          <div className="saved-title">My Technique Proposals</div>
+          <div className="saved-title">{isSearchMode ? 'Search Results' : 'Technique Books'}</div>
 
           <div className="saved-item-actions">
-            <button type="button" className="btn" onClick={startNewDraft}>
+            <button type="button" className="btn" onClick={() => startNewDraft()}>
               New Draft
             </button>
             <button type="button" className="btn" onClick={exportTechniquesJson}>
@@ -402,7 +563,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
               Import JSON
             </button>
             <button type="button" className="btn" onClick={downloadTechniquesTemplate}>
-              Want to create an Inticore-compatible JSON externally? Download the format here
+              Download Format
             </button>
             <input
               ref={importFileRef}
@@ -413,121 +574,256 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
             />
           </div>
 
-          <div className="saved-list competitive-list">
-            {loading && <div className="saved-empty">Loading technique proposals...</div>}
-            {!loading && records.length === 0 && <div className="saved-empty">No technique proposals yet.</div>}
-            {!loading &&
-              records.map((item) => (
-                <div key={item.id} className="saved-item">
-                  <div className="saved-item-name">{getTechniqueTranslation(item, activeLanguage).name || 'Untitled technique'}</div>
-                  <div className="saved-item-tags">ES: {item.name || 'N/A'}</div>
-                  <div className="saved-item-tags">FR: {item.name_fr || item.name || 'N/A'}</div>
-                  <div className="saved-item-date">{formatDate(item.updated_at)}</div>
-                  <div className="saved-item-tags">Status: {item.status}</div>
-                  <div className="saved-item-actions">
-                    <button type="button" className="btn" onClick={() => loadIntoForm(item)}>
-                      Edit
-                    </button>
-                    <button type="button" className="btn danger" onClick={() => deleteTechnique(item)} disabled={saving}>
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
+          <div className="collection-toolbar">
+            <label className="field">
+              <span>Name</span>
+              <input
+                value={nameSearch}
+                onChange={(e) => {
+                  setNameSearch(e.target.value)
+                  setScreen('books')
+                }}
+                placeholder={activeLanguage === 'fr' ? 'Search French name' : 'Search Spanish name'}
+              />
+            </label>
           </div>
+
+          <div className="saved-empty">
+            {isSearchMode
+              ? 'El buscador muestra tecnicas para entrar directo al editor.'
+              : 'Primero se muestran solo los libros-compendio para navegar sin saturar la pantalla.'}
+          </div>
+
+          {!isBooksStage && <div className="saved-list competitive-list">
+            {loading && <div className="saved-empty">Loading technique proposals...</div>}
+            {!loading && isSearchMode && filteredRecords.length === 0 && <div className="saved-empty">No matching techniques found.</div>}
+            {!loading && isSearchMode && filteredRecords.map((item) => (
+              <button key={item.id} type="button" className="technique-preview-card" onClick={() => loadIntoForm(item)}>
+                {(() => {
+                  const taxonomy = getTechniqueTaxonomy(item, activeLanguage)
+                  return (
+                    <>
+                <div className="technique-preview-card-top">
+                  <span className="technique-preview-card-type">{taxonomy.effectType || 'Technique'}</span>
+                  <span className="technique-preview-card-meta">{taxonomy.topic || 'Sin tema'}</span>
+                </div>
+                <div className="technique-preview-card-title">{getTechniqueTranslation(item, activeLanguage).name || 'Untitled technique'}</div>
+                <div className="technique-preview-card-body">{buildTechniquePreview(item, activeLanguage, 180)}</div>
+                    </>
+                  )
+                })()}
+              </button>
+            ))}
+          </div>}
         </div>
 
         <div className="panel">
-          <div className="saved-title">Techniques Editor</div>
-          <div className="saved-empty">Entity type: competitive_technique_proposals</div>
-          <div className="saved-empty">Spanish fields are required for compatibility. French fields are optional and can be completed from the language switcher.</div>
-          <div className="saved-empty">If you provide French content, it must keep the same level of detail and clarity as the Spanish version.</div>
-          <div className="saved-empty">A technique should describe a reusable mathematical method, criterion, transformation, or operation, not just one isolated solution.</div>
-          <div className="saved-empty">Keep the wording minimal and precise: as few words as possible, without sacrificing clarity.</div>
-          <div className="saved-empty">When importing or drafting outside the editor, every equation or symbolic expression must be wrapped with $...$ so it renders correctly after conversion.</div>
-          <div className="saved-empty">Inside those equations, use English math notation in functions and abbreviations: write `sin t` instead of `sen t`.</div>
-
-          <label className="field">
-            <span>Status</span>
-            <select value={form.status} onChange={(e) => onFormChange('status', e.target.value)}>
-              {allowedStatusOptions.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="competitive-grid">
-            <label className="field">
-              <span>Topic</span>
-              <input value={form.topic} onChange={(e) => onFormChange('topic', e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Subtopic</span>
-              <input value={form.subtopic} onChange={(e) => onFormChange('subtopic', e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Effect type</span>
-              <input value={form.effectType} onChange={(e) => onFormChange('effectType', e.target.value)} placeholder="transform / simplify / solve" />
-            </label>
-          </div>
-
-          <div className="auth-tabs" style={{ marginBottom: 14 }}>
-            {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
-              <button
-                key={language.id}
-                type="button"
-                className={`auth-tab ${activeLanguage === language.id ? 'active' : ''}`}
-                onClick={() => setActiveLanguage(language.id)}
-              >
-                {language.label}
+          {screen !== 'books' && (
+            <div className="saved-item-actions" style={{ marginBottom: 14 }}>
+              <button type="button" className="btn" onClick={goBack}>
+                Back
               </button>
-            ))}
-          </div>
+            </div>
+          )}
 
-          <label className="field">
-            <span>Name {activeLanguage === 'es' ? '*' : ''}</span>
-            <input
-              value={activeTranslation.name}
-              onChange={(e) => onTranslationChange(activeLanguage, 'name', e.target.value)}
-              placeholder={activeLanguage === 'fr' ? 'French version of the technique name' : ''}
-            />
-          </label>
+          {screen === 'books' && (
+            <>
+              {!isSearchMode && (
+                <>
+                  <div className="saved-title">Technique Books</div>
+                  <div className="saved-empty">Libros ordenados alfabeticamente y desplegados a pantalla completa para priorizar el tema antes de editar.</div>
+                  <div className="compendium-book-grid" style={{ marginTop: 16 }}>
+                    {loading && <div className="saved-empty">Loading technique proposals...</div>}
+                    {!loading && books.length === 0 && <div className="saved-empty">No technique proposals yet.</div>}
+                    {!loading && books.map((book) => (
+                      <div key={book.id} className="saved-item compendium-book-card">
+                        <div className="compendium-book-cover">
+                          <div>
+                            <div className="compendium-book-kicker">Technique Editor</div>
+                            <div className="compendium-book-title">{book.title}</div>
+                          </div>
+                          <div className="compendium-book-summary">
+                            Entra al compendio para editar tecnicas existentes o crear nuevos borradores dentro del mismo tema.
+                          </div>
+                          <div className="compendium-book-footer">
+                            <div className="compendium-book-stats">
+                              <div className="compendium-book-stat">{book.count} tecnicas</div>
+                              <div className="compendium-book-stat">Subtopics: {book.subtopics.join(', ') || 'N/A'}</div>
+                            </div>
+                            <div className="saved-item-actions">
+                              <button type="button" className="btn" onClick={() => openBook(book.id)}>
+                                Open Book
+                              </button>
+                              <button type="button" className="btn" onClick={() => startNewDraft(book.id)}>
+                                New In Book
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {isSearchMode && (
+                <>
+                  <div className="saved-title">Search Results</div>
+                  <div className="saved-empty">Selecciona una tecnica del buscador para abrir su editor.</div>
+                </>
+              )}
+            </>
+          )}
 
-          <label className="field">
-            <span>Effect description {activeLanguage === 'es' ? '*' : ''}</span>
-            <div className="saved-empty">Define what the technique does, when it applies, and what transformation or conclusion it produces.</div>
-            <div className="saved-empty">Do not use this field only for a worked solution, only for a result, or only for motivational commentary.</div>
-            <div className="saved-empty">Prefer compact formulas and short mathematical indications over long prose.</div>
-            <div className="saved-empty">Use "Add Img URL" in the toolbar for graph or diagram references.</div>
-            <DescriptionEditor
-              value={activeTranslation.effectDescription}
-              onChange={(value) => onTranslationChange(activeLanguage, 'effectDescription', value)}
-              baseFontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}
-              baseFontSize={18}
-            />
-          </label>
+          {screen === 'techniques' && selectedBook && (
+            <>
+              <div className="saved-title">Techniques In {selectedBook.title}</div>
+              <div className="saved-empty">Esta pantalla muestra solo las tecnicas del libro seleccionado.</div>
 
-          <label className="field">
-            <span>Worked example</span>
-            <div className="saved-empty">Use this field to demonstrate the technique on a concrete expression or situation without replacing the technique definition above.</div>
-            <div className="saved-empty">Keep the example short and focused on the key transformation.</div>
-            <div className="saved-empty">Supports math and optional image references.</div>
-            <DescriptionEditor
-              value={activeTranslation.workedExample}
-              onChange={(value) => onTranslationChange(activeLanguage, 'workedExample', value)}
-              baseFontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}
-              baseFontSize={18}
-            />
-          </label>
+              <div className="saved-item-actions" style={{ marginBottom: 12 }}>
+                <button type="button" className="btn" onClick={() => startNewDraft(selectedBook.id)}>
+                  New Draft In This Book
+                </button>
+              </div>
 
-          {error && <div className="auth-error">{error}</div>}
-          {!error && notice && <div className="saved-empty">{notice}</div>}
+              <div className="technique-card-grid">
+                {selectedBook.items.map((item) => {
+                  const translation = getTechniqueTranslation(item, activeLanguage)
+                  const taxonomy = getTechniqueTaxonomy(item, activeLanguage)
 
-          <button type="button" className="btn" onClick={saveTechnique} disabled={saving || !canSave}>
-            {saving ? 'Saving...' : techniqueId ? 'Update Technique' : 'Save Draft'}
-          </button>
+                  return (
+                    <button key={item.id} type="button" className="technique-preview-card" onClick={() => loadIntoForm(item)}>
+                      <div className="technique-preview-card-top">
+                        <span className="technique-preview-card-type">{taxonomy.effectType || 'Technique'}</span>
+                        <span className="technique-preview-card-meta">{taxonomy.subtopic || 'General'}</span>
+                      </div>
+                      <div className="technique-preview-card-title">{translation.name || 'Untitled technique'}</div>
+                      <div className="technique-preview-card-body">{buildTechniquePreview(item, activeLanguage, 220)}</div>
+                      <div className="technique-preview-card-footer">
+                        <span>{item.status}</span>
+                        <span>{formatDate(item.updated_at)}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {screen === 'editor' && (
+            <>
+              <div className="saved-title">{isCreatingNew ? 'Techniques Editor - New Draft' : 'Techniques Editor'}</div>
+              <div className="saved-empty">Entity type: competitive_technique_proposals</div>
+              <div className="saved-empty">Spanish and French fields are both required for the technique taxonomy and the main localized content.</div>
+              <div className="saved-empty">A technique should describe a reusable mathematical method, criterion, transformation, or operation.</div>
+              <div className="saved-empty">Topics canonicos: {taxonomyNotes.topics}</div>
+              <div className="saved-empty">Effect types canonicos: {taxonomyNotes.effectTypes}</div>
+
+              <label className="field">
+                <span>Status</span>
+                <select value={form.status} onChange={(e) => onFormChange('status', e.target.value)}>
+                  {allowedStatusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="competitive-grid">
+                <label className="field">
+                  <span>Topic *</span>
+                  <select value={form.topicId} onChange={(e) => onFormChange('topicId', e.target.value)}>
+                    <option value="">Select topic</option>
+                    {topicOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Subtopic *</span>
+                  <select value={form.subtopicId} onChange={(e) => onFormChange('subtopicId', e.target.value)} disabled={!form.topicId}>
+                    <option value="">{form.topicId ? 'Select subtopic' : 'Select topic first'}</option>
+                    {subtopicOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Effect type *</span>
+                  <select value={form.effectTypeId} onChange={(e) => onFormChange('effectTypeId', e.target.value)}>
+                    <option value="">Select effect type</option>
+                    {effectTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="auth-tabs" style={{ marginBottom: 14 }}>
+                {TECHNIQUE_LANGUAGE_OPTIONS.map((language) => (
+                  <button
+                    key={language.id}
+                    type="button"
+                    className={`auth-tab ${activeLanguage === language.id ? 'active' : ''}`}
+                    onClick={() => setActiveLanguage(language.id)}
+                  >
+                    {language.label}
+                  </button>
+                ))}
+              </div>
+
+              <label className="field">
+                <span>Name {activeLanguage === 'es' ? '*' : ''}</span>
+                <input
+                  value={activeTranslation.name}
+                  onChange={(e) => onTranslationChange(activeLanguage, 'name', e.target.value)}
+                  placeholder={activeLanguage === 'fr' ? 'French version of the technique name' : ''}
+                />
+              </label>
+
+              <label className="field">
+                <span>Effect description {activeLanguage === 'es' ? '*' : ''}</span>
+                <DescriptionEditor
+                  value={activeTranslation.effectDescription}
+                  onChange={(value) => onTranslationChange(activeLanguage, 'effectDescription', value)}
+                  baseFontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}
+                  baseFontSize={18}
+                />
+              </label>
+
+              <label className="field">
+                <span>Worked example</span>
+                <DescriptionEditor
+                  value={activeTranslation.workedExample}
+                  onChange={(value) => onTranslationChange(activeLanguage, 'workedExample', value)}
+                  baseFontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}
+                  baseFontSize={18}
+                />
+              </label>
+
+              {error && <div className="auth-error">{error}</div>}
+              {!error && notice && <div className="saved-empty">{notice}</div>}
+
+              <div className="saved-item-actions">
+                <button type="button" className="btn" onClick={saveTechnique} disabled={saving || !canSave}>
+                  {saving ? 'Saving...' : techniqueId ? 'Update Technique' : 'Save Draft'}
+                </button>
+                {!isCreatingNew && selectedRecordId && (
+                  <button
+                    type="button"
+                    className="btn danger"
+                    onClick={() => {
+                      const row = records.find((item) => item.id === selectedRecordId)
+                      if (row) deleteTechnique(row)
+                    }}
+                    disabled={saving}
+                  >
+                    Delete Technique
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

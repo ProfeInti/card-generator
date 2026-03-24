@@ -27,6 +27,30 @@ export function getTechniqueTranslation(row, language = 'es') {
   }
 }
 
+export function getTechniqueTaxonomy(row, language = 'es') {
+  if (!row || typeof row !== 'object') {
+    return {
+      topic: '',
+      subtopic: '',
+      effectType: '',
+    }
+  }
+
+  if (language === 'fr') {
+    return {
+      topic: row.topic_fr || row.topic || '',
+      subtopic: row.subtopic_fr || row.subtopic || '',
+      effectType: row.effect_type_fr || row.effect_type || '',
+    }
+  }
+
+  return {
+    topic: row.topic || '',
+    subtopic: row.subtopic || '',
+    effectType: row.effect_type || '',
+  }
+}
+
 export function getTechniqueDisplayName(row, options = {}) {
   const {
     includeBoth = true,

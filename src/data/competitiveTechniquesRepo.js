@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 // We keep this file active until the UI is switched over in a later phase.
 
 const TECHNIQUE_SELECT_FIELDS =
-  'id, created_by, reviewed_by, approved_at, status, name, name_fr, topic, subtopic, effect_type, effect_description, effect_description_fr, worked_example, worked_example_fr, created_at, updated_at'
+  'id, created_by, reviewed_by, approved_at, status, name, name_fr, topic, topic_fr, subtopic, subtopic_fr, effect_type, effect_type_fr, effect_description, effect_description_fr, worked_example, worked_example_fr, created_at, updated_at'
 
 export async function listOwnCompetitiveTechniques(userId) {
   const { data, error } = await supabase
@@ -125,9 +125,9 @@ export async function unpublishCompetitiveTechniqueAsTeacher(techniqueId, teache
 }
 
 const TECHNIQUE_CATALOG_SELECT_FIELDS =
-  'id, legacy_technique_id, created_by, reviewed_by, status, published_at, archived_at, name, name_fr, topic, subtopic, effect_type, effect_description, effect_description_fr, worked_example, worked_example_fr, created_at, updated_at'
+  'id, legacy_technique_id, created_by, reviewed_by, status, published_at, archived_at, name, name_fr, topic, topic_fr, subtopic, subtopic_fr, effect_type, effect_type_fr, effect_description, effect_description_fr, worked_example, worked_example_fr, created_at, updated_at'
 const TECHNIQUE_PROPOSAL_SELECT_FIELDS =
-  'id, legacy_technique_id, created_by, reviewed_by, published_catalog_id, status, approved_at, name, name_fr, topic, subtopic, effect_type, effect_description, effect_description_fr, worked_example, worked_example_fr, created_at, updated_at'
+  'id, legacy_technique_id, created_by, reviewed_by, published_catalog_id, status, approved_at, name, name_fr, topic, topic_fr, subtopic, subtopic_fr, effect_type, effect_type_fr, effect_description, effect_description_fr, worked_example, worked_example_fr, created_at, updated_at'
 
 function normalizeTechniqueKeyPart(value) {
   return String(value || '').trim().toLowerCase()
@@ -196,8 +196,11 @@ export async function listApprovedTechniqueCatalogEntries() {
       name: row.name,
       name_fr: row.name_fr,
       topic: row.topic,
+      topic_fr: row.topic_fr,
       subtopic: row.subtopic,
+      subtopic_fr: row.subtopic_fr,
       effect_type: row.effect_type,
+      effect_type_fr: row.effect_type_fr,
       effect_description: row.effect_description,
       effect_description_fr: row.effect_description_fr,
       worked_example: row.worked_example,
@@ -223,6 +226,55 @@ export async function deleteTechniqueCatalogEntryAsTeacher(catalogTechniqueId) {
     .eq('id', catalogTechniqueId)
 
   if (error) throw error
+  return true
+}
+
+export async function removeCompetitiveTechniqueFromGlobalCatalogAsTeacher({
+  catalogId,
+  orphanedProposalId,
+  legacyTechniqueId,
+  teacherUserId,
+}) {
+  const proposalIds = new Set()
+
+  if (orphanedProposalId) {
+    proposalIds.add(orphanedProposalId)
+  }
+
+  const matchers = []
+  if (catalogId) matchers.push(`published_catalog_id.eq.${catalogId}`)
+  if (legacyTechniqueId) matchers.push(`legacy_technique_id.eq.${legacyTechniqueId}`)
+
+  if (matchers.length) {
+    const { data, error } = await supabase
+      .from('competitive_technique_proposals')
+      .select('id')
+      .eq('status', 'approved')
+      .or(matchers.join(','))
+
+    if (error) throw error
+    ;(Array.isArray(data) ? data : []).forEach((row) => {
+      if (row?.id) proposalIds.add(row.id)
+    })
+  }
+
+  if (proposalIds.size) {
+    const { error } = await supabase
+      .from('competitive_technique_proposals')
+      .delete()
+      .in('id', [...proposalIds])
+
+    if (error) throw error
+  }
+
+  if (catalogId) {
+    await deleteTechniqueCatalogEntryAsTeacher(catalogId)
+  }
+
+  if (legacyTechniqueId && teacherUserId) {
+    await unpublishCompetitiveTechniqueAsTeacher(legacyTechniqueId, teacherUserId)
+  }
+
   return true
 }
 
@@ -444,8 +496,11 @@ async function publishCompetitiveTechniqueProposalRecord(proposal, teacherUserId
         name: proposal.name,
         name_fr: proposal.name_fr,
         topic: proposal.topic,
+        topic_fr: proposal.topic_fr,
         subtopic: proposal.subtopic,
+        subtopic_fr: proposal.subtopic_fr,
         effect_type: proposal.effect_type,
+        effect_type_fr: proposal.effect_type_fr,
         effect_description: proposal.effect_description,
         effect_description_fr: proposal.effect_description_fr,
         worked_example: proposal.worked_example,
@@ -465,8 +520,11 @@ async function publishCompetitiveTechniqueProposalRecord(proposal, teacherUserId
         name: proposal.name,
         name_fr: proposal.name_fr,
         topic: proposal.topic,
+        topic_fr: proposal.topic_fr,
         subtopic: proposal.subtopic,
+        subtopic_fr: proposal.subtopic_fr,
         effect_type: proposal.effect_type,
+        effect_type_fr: proposal.effect_type_fr,
         effect_description: proposal.effect_description,
         effect_description_fr: proposal.effect_description_fr,
         worked_example: proposal.worked_example,
@@ -491,8 +549,11 @@ async function publishCompetitiveTechniqueProposalRecord(proposal, teacherUserId
         name: proposal.name,
         name_fr: proposal.name_fr,
         topic: proposal.topic,
+        topic_fr: proposal.topic_fr,
         subtopic: proposal.subtopic,
+        subtopic_fr: proposal.subtopic_fr,
         effect_type: proposal.effect_type,
+        effect_type_fr: proposal.effect_type_fr,
         effect_description: proposal.effect_description,
         effect_description_fr: proposal.effect_description_fr,
         worked_example: proposal.worked_example,
@@ -513,8 +574,11 @@ async function publishCompetitiveTechniqueProposalRecord(proposal, teacherUserId
         name: proposal.name,
         name_fr: proposal.name_fr,
         topic: proposal.topic,
+        topic_fr: proposal.topic_fr,
         subtopic: proposal.subtopic,
+        subtopic_fr: proposal.subtopic_fr,
         effect_type: proposal.effect_type,
+        effect_type_fr: proposal.effect_type_fr,
         effect_description: proposal.effect_description,
         effect_description_fr: proposal.effect_description_fr,
         worked_example: proposal.worked_example,

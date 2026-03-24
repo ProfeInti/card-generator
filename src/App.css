@@ -1181,6 +1181,10 @@ math-virtual-keyboard,
   align-items: start;
 }
 
+.competitive-layout.is-books {
+  grid-template-columns: 1fr;
+}
+
 .competitive-list {
   max-height: 65vh;
 }
@@ -1189,6 +1193,148 @@ math-virtual-keyboard,
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0 8px;
+}
+
+.compendium-book-card.is-selected {
+  border-color: #53d1f0;
+  box-shadow: 0 0 0 1px rgba(83, 209, 240, 0.28);
+}
+
+.compendium-book-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+}
+
+.compendium-book-card {
+  border: 1px solid #355267;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(126, 231, 187, 0.12), transparent 35%),
+    linear-gradient(160deg, rgba(16, 33, 43, 0.98) 0%, rgba(18, 18, 18, 0.98) 100%);
+  box-shadow: 0 16px 28px rgba(0, 0, 0, 0.22);
+}
+
+.compendium-book-cover {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px;
+}
+
+.compendium-book-kicker {
+  color: #8de7bf;
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.compendium-book-title {
+  color: #ffffff;
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.05;
+  font-weight: 800;
+  max-width: 12ch;
+}
+
+.compendium-book-summary {
+  color: #b8d2dd;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.compendium-book-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.compendium-book-stats {
+  display: grid;
+  gap: 6px;
+}
+
+.compendium-book-stat {
+  color: #dcecf3;
+  font-size: 12px;
+}
+
+.technique-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.technique-preview-card {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #2f4654;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(18, 34, 44, 0.98) 0%, rgba(17, 17, 17, 0.98) 100%);
+  color: #ebf8ff;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.technique-preview-card:hover {
+  border-color: #7ce7bb;
+  transform: translateY(-1px);
+}
+
+.technique-preview-card.is-selected {
+  border-color: #7ce7bb;
+  box-shadow: 0 0 0 1px rgba(124, 231, 187, 0.28);
+}
+
+.technique-preview-card-top,
+.technique-preview-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.technique-preview-card-top {
+  margin-bottom: 10px;
+}
+
+.technique-preview-card-footer {
+  margin-top: 12px;
+  color: #93b8c8;
+  font-size: 11px;
+}
+
+.technique-preview-card-type,
+.technique-preview-card-meta {
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.technique-preview-card-type {
+  color: #8de7bf;
+}
+
+.technique-preview-card-meta {
+  color: #9ac4d5;
+}
+
+.technique-preview-card-title {
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.technique-preview-card-body {
+  color: #c4d8e1;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 @media (max-width: 980px) {

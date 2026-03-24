@@ -372,6 +372,32 @@ function clampZoomLevel(value) {
   return Math.min(MAX_ZOOM_LEVEL, Math.max(MIN_ZOOM_LEVEL, numericValue))
 }
 
+function resolveFloatingPanelPosition({
+  anchorX,
+  anchorY,
+  viewportWidth,
+  viewportHeight,
+  panelWidth,
+  panelHeight,
+  minLeft = 12,
+  minTop = 12,
+  margin = 12,
+  flipOffsetX = 16,
+  flipOffsetY = 24,
+}) {
+  const preferredLeft = anchorX > viewportWidth - panelWidth - margin
+    ? anchorX - panelWidth - flipOffsetX
+    : anchorX
+  const preferredTop = anchorY > viewportHeight - Math.min(panelHeight, 360)
+    ? anchorY - Math.min(panelHeight - margin, 520) - flipOffsetY
+    : anchorY
+
+  return {
+    left: clampFloatingPosition(preferredLeft, minLeft, Math.max(minLeft, viewportWidth - panelWidth - margin)),
+    top: clampFloatingPosition(preferredTop, minTop, Math.max(minTop, viewportHeight - Math.min(panelHeight, viewportHeight - minTop - margin))),
+  }
+}
+
 function serializeBoard(nodes, links) {
   return JSON.stringify({
     nodes: Array.isArray(nodes) ? nodes : [],
@@ -1877,15 +1903,31 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
 
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 800
-  const editorLeft = clampFloatingPosition(editorState.x, 12, Math.max(12, viewportWidth - 940))
-  const editorTop = clampFloatingPosition(editorState.y, 12, Math.max(12, viewportHeight - 280))
-  const canvasMenuLeft = clampFloatingPosition(canvasMenu.x, 12, Math.max(12, viewportWidth - 260))
-  const canvasMenuTop = clampFloatingPosition(canvasMenu.y, 12, Math.max(12, viewportHeight - 180))
+  const estimatedEditorWidth = Math.min(920, Math.max(320, viewportWidth - 24))
+  const estimatedEditorHeight = Math.min(860, Math.max(320, Math.round(viewportHeight * 0.86)))
+  const { left: editorLeft, top: editorTop } = resolveFloatingPanelPosition({
+    anchorX: editorState.x,
+    anchorY: editorState.y,
+    viewportWidth,
+    viewportHeight,
+    panelWidth: estimatedEditorWidth,
+    panelHeight: estimatedEditorHeight,
+  })
+  const { left: canvasMenuLeft, top: canvasMenuTop } = resolveFloatingPanelPosition({
+    anchorX: canvasMenu.x,
+    anchorY: canvasMenu.y,
+    viewportWidth,
+    viewportHeight,
+    panelWidth: 260,
+    panelHeight: 220,
+    flipOffsetX: 10,
+    flipOffsetY: 10,
+  })
 
   const editorStyle = {
     left: `${editorLeft}px`,
     top: `${editorTop}px`,
-    maxHeight: `${Math.max(280, viewportHeight - editorTop - 16)}px`,
+    maxHeight: `${Math.min(estimatedEditorHeight, Math.max(280, viewportHeight - editorTop - 16))}px`,
   }
 
   const canvasMenuStyle = {
