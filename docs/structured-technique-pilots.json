@@ -1,0 +1,177 @@
+{
+  "format": "inticore-competitive-v1",
+  "entity": "competitive_technique_proposals",
+  "version": 1,
+  "generatedFrom": "structured-technique-spec-v1",
+  "techniques": [
+    {
+      "name": "Factorización de una expresión",
+      "nameFr": "Factorisation d une expression",
+      "topicKey": "algebra",
+      "topic": "Álgebra",
+      "topicFr": "Algèbre",
+      "subtopicKey": "algebra_factorization",
+      "subtopic": "Factorización",
+      "subtopicFr": "Factorisation",
+      "effectTypeKey": "transformation",
+      "effectType": "Transformación",
+      "effectTypeFr": "Transformation",
+      "status": "proposed",
+      "effectDescription": "<p>Reescribe una expresión algebraica como producto de factores equivalentes cuando la factorización es posible.</p>",
+      "effectDescriptionFr": "<p>Réécrit une expression algébrique comme produit de facteurs équivalents lorsque la factorisation est possible.</p>",
+      "workedExample": "<p><span data-type=\"math-inline\" data-latex=\"x^2+5x+6\"></span> se factoriza como <span data-type=\"math-inline\" data-latex=\"(x+2)(x+3)\"></span>.</p>",
+      "workedExampleFr": "<p><span data-type=\"math-inline\" data-latex=\"x^2+5x+6\"></span> se factorise comme <span data-type=\"math-inline\" data-latex=\"(x+2)(x+3)\"></span>.</p>",
+      "structuredTechniqueSpec": {
+        "version": "v1",
+        "archetype": "selection_only",
+        "inputSpec": [],
+        "operationSpec": {
+          "family": "factorization",
+          "operation": "factor_selection",
+          "arguments": {}
+        },
+        "narrationSpec": {
+          "introEs": "Aplicando la factorización:",
+          "introFr": "En appliquant la factorisation :",
+          "stepsMode": "compact",
+          "stepTemplates": [
+            {
+              "kind": "text",
+              "textEs": "Factorizamos la expresión seleccionada:",
+              "textFr": "On factorise l expression sélectionnée :"
+            }
+          ]
+        },
+        "renderSpec": {
+          "finalResultMode": "result_only",
+          "displayStyle": "math_block",
+          "allowDuplicateFinalLine": false
+        }
+      }
+    },
+    {
+      "name": "Derivada respecto de una variable",
+      "nameFr": "Dérivée par rapport à une variable",
+      "topicKey": "calculus_i",
+      "topic": "Cálculo I",
+      "topicFr": "Calcul I",
+      "subtopicKey": "calculus_i_derivative_rules",
+      "subtopic": "Reglas de derivación",
+      "subtopicFr": "Règles de dérivation",
+      "effectTypeKey": "operation",
+      "effectType": "Operación",
+      "effectTypeFr": "Opération",
+      "status": "proposed",
+      "effectDescription": "<p>Calcula la derivada de la expresión seleccionada respecto de la variable indicada.</p>",
+      "effectDescriptionFr": "<p>Calcule la dérivée de l expression sélectionnée par rapport à la variable indiquée.</p>",
+      "workedExample": "<p>La derivada de <span data-type=\"math-inline\" data-latex=\"x^3+2x\"></span> respecto de <span data-type=\"math-inline\" data-latex=\"x\"></span> es <span data-type=\"math-inline\" data-latex=\"3x^2+2\"></span>.</p>",
+      "workedExampleFr": "<p>La dérivée de <span data-type=\"math-inline\" data-latex=\"x^3+2x\"></span> par rapport à <span data-type=\"math-inline\" data-latex=\"x\"></span> est <span data-type=\"math-inline\" data-latex=\"3x^2+2\"></span>.</p>",
+      "structuredTechniqueSpec": {
+        "version": "v1",
+        "archetype": "selection_plus_parameter",
+        "inputSpec": [
+          {
+            "id": "variable",
+            "type": "math_text",
+            "required": true,
+            "labelEs": "Variable de derivación",
+            "labelFr": "Variable de dérivation",
+            "placeholderEs": "Ej. x",
+            "placeholderFr": "Ex. x"
+          }
+        ],
+        "operationSpec": {
+          "family": "derivative",
+          "operation": "differentiate_selection",
+          "arguments": {
+            "variableInputId": "variable"
+          }
+        },
+        "narrationSpec": {
+          "introEs": "Aplicando la derivación:",
+          "introFr": "En appliquant la dérivation :",
+          "stepsMode": "compact",
+          "stepTemplates": [
+            {
+              "kind": "text",
+              "textEs": "Derivamos respecto de {variable}:",
+              "textFr": "On dérive par rapport à {variable} :"
+            }
+          ]
+        },
+        "renderSpec": {
+          "finalResultMode": "result_only",
+          "displayStyle": "math_block",
+          "allowDuplicateFinalLine": false
+        }
+      }
+    },
+    {
+      "name": "Axioma de sustitución",
+      "nameFr": "Axiome de substitution",
+      "topicKey": "algebra",
+      "topic": "Álgebra",
+      "topicFr": "Algèbre",
+      "subtopicKey": "algebra_expressions",
+      "subtopic": "Expresiones algebraicas",
+      "subtopicFr": "Expressions algébriques",
+      "effectTypeKey": "transformation",
+      "effectType": "Transformación",
+      "effectTypeFr": "Transformation",
+      "status": "proposed",
+      "effectDescription": "<p>Si una variable ya tiene un valor o una igualdad equivalente, puede reemplazarse dentro de otra expresión, ecuación o fórmula donde aparezca.</p>",
+      "effectDescriptionFr": "<p>Si une variable a déjà une valeur ou une égalité équivalente, on peut la remplacer dans une autre expression, équation ou formule où elle apparaît.</p>",
+      "workedExample": "<p>Si <span data-type=\"math-inline\" data-latex=\"x=3\"></span>, entonces en <span data-type=\"math-inline\" data-latex=\"2x+5\"></span> se obtiene <span data-type=\"math-inline\" data-latex=\"11\"></span>.</p>",
+      "workedExampleFr": "<p>Si <span data-type=\"math-inline\" data-latex=\"x=3\"></span>, alors dans <span data-type=\"math-inline\" data-latex=\"2x+5\"></span> on obtient <span data-type=\"math-inline\" data-latex=\"11\"></span>.</p>",
+      "structuredTechniqueSpec": {
+        "version": "v1",
+        "archetype": "replace_in_target",
+        "inputSpec": [
+          {
+            "id": "source_variable",
+            "type": "math_text",
+            "required": false,
+            "labelEs": "Variable a reemplazar",
+            "labelFr": "Variable à remplacer",
+            "placeholderEs": "Ej. x",
+            "placeholderFr": "Ex. x"
+          },
+          {
+            "id": "target_expression",
+            "type": "reference_or_selection",
+            "required": true,
+            "labelEs": "Referencia o expresión destino",
+            "labelFr": "Référence ou expression cible",
+            "placeholderEs": "Ej. 2x+5",
+            "placeholderFr": "Ex. 2x+5"
+          }
+        ],
+        "operationSpec": {
+          "family": "substitution",
+          "operation": "replace_symbol_in_target",
+          "arguments": {
+            "targetInputId": "target_expression",
+            "variableInputId": "source_variable"
+          }
+        },
+        "narrationSpec": {
+          "introEs": "Aplicando el axioma de sustitución:",
+          "introFr": "En appliquant l axiome de substitution :",
+          "stepsMode": "compact",
+          "stepTemplates": [
+            {
+              "kind": "text",
+              "textEs": "Reemplazando {source} en {target}:",
+              "textFr": "En remplaçant {source} dans {target} :"
+            }
+          ]
+        },
+        "renderSpec": {
+          "finalResultMode": "result_only",
+          "displayStyle": "math_block",
+          "allowDuplicateFinalLine": false
+        }
+      }
+    }
+  ]
+}

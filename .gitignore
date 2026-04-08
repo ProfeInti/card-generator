@@ -16,6 +16,11 @@ dist-ssr
 server/*.db
 server/*.db-shm
 server/*.db-wal
+exports/
+tools/**/*.exe
+tools/**/*.zip
+tools/**/*.out.log
+tools/**/*.err.log
 
 # Editor directories and files
 .vscode/*

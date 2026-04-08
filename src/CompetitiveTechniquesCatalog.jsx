@@ -38,6 +38,8 @@ function buildCatalogForm(row) {
     effectDescriptionFr: normalizeMathHtmlInput(row?.effect_description_fr || ''),
     workedExample: normalizeMathHtmlInput(row?.worked_example || ''),
     workedExampleFr: normalizeMathHtmlInput(row?.worked_example_fr || ''),
+    applicationStructure: normalizeMathHtmlInput(row?.application_structure || row?.worked_example || ''),
+    applicationStructureFr: normalizeMathHtmlInput(row?.application_structure_fr || row?.application_structure || row?.worked_example_fr || row?.worked_example || ''),
   }
 }
 
@@ -85,6 +87,11 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
   const renderedWorkedExample = useMemo(
     () => renderMathInHtml(normalizeMathHtmlInput(selectedTranslation.workedExample)),
     [selectedTranslation.workedExample]
+  )
+
+  const renderedApplicationStructure = useMemo(
+    () => renderMathInHtml(normalizeMathHtmlInput(selectedTranslation.applicationStructure)),
+    [selectedTranslation.applicationStructure]
   )
 
   const loadItems = useCallback(async () => {
@@ -288,6 +295,12 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
       return
     }
 
+    if (!hasMeaningfulHtmlContent(teacherEditForm.applicationStructure)) {
+      setError('Spanish application structure is required.')
+      setNotice('')
+      return
+    }
+
     if (!teacherEditForm.topicId || !teacherEditForm.subtopicId || !teacherEditForm.effectTypeId) {
       setError('Topic, subtopic, and effect type are required in both Spanish and French.')
       setNotice('')
@@ -313,6 +326,8 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
         effect_description_fr: String(teacherEditForm.effectDescriptionFr || '').trim() || null,
         worked_example: String(teacherEditForm.workedExample || '').trim() || null,
         worked_example_fr: String(teacherEditForm.workedExampleFr || '').trim() || null,
+        application_structure: String(teacherEditForm.applicationStructure || '').trim() || null,
+        application_structure_fr: String(teacherEditForm.applicationStructureFr || '').trim() || null,
         reviewed_by: session.userId,
       })
       await loadItems()
@@ -560,6 +575,13 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
                 </div>
               </label>
 
+              <label className="field">
+                <span>Application structure</span>
+                <div className="rt-editor" style={{ minHeight: 140 }}>
+                  <div className="card-description" dangerouslySetInnerHTML={{ __html: renderedApplicationStructure }} />
+                </div>
+              </label>
+
               <div className="saved-item-actions">
                 <button type="button" className="btn" onClick={() => handleCopyToCollection(selected)} disabled={actionLoading || !selected.has_catalog_entry}>
                   {actionLoading ? 'Processing...' : 'Copy to My Collection'}
@@ -653,6 +675,19 @@ export default function CompetitiveTechniquesCatalog({ session, onBackToCompetit
                       baseFontSize={18}
                     />
                   </label>
+
+                  <label className="field">
+                    <span>Application structure {teacherEditLanguage === 'es' ? '*' : ''}</span>
+                    <DescriptionEditor
+                      value={teacherEditLanguage === 'fr' ? teacherEditForm.applicationStructureFr : teacherEditForm.applicationStructure}
+                      onChange={(value) => handleTeacherCatalogFieldChange(teacherEditLanguage === 'fr' ? 'applicationStructureFr' : 'applicationStructure', value)}
+                      baseFontFamily={EDITOR_FONT_FAMILY}
+                      baseFontSize={18}
+                    />
+                  </label>
+                  <div className="saved-empty">
+                    Esta es la frase que el notebook insertara al aplicar la tecnica desde el menu contextual.
+                  </div>
                 </div>
               )}
             </>

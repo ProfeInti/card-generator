@@ -1,4 +1,6 @@
-import { supabase } from '../lib/supabase'
+import { listApprovedTechniqueCatalogEntries, listPrivateCompetitiveTechniqueInventory } from './competitiveTechniquesRepo'
+import { listCompetitiveExercisesByIds } from './competitiveExercisesRepo'
+import { createLocalId, readLocalJson, sortByUpdatedAtDesc, writeLocalJson } from '../lib/localStore'
 
 const CONSTRUCT_SELECT_FIELDS =
   'id, created_by, exercise_id, title, description, image_url, attack, armor, ingenuity_cost, effect_strength, effects, status, created_at, updated_at, reviewed_by, approved_at'
@@ -11,207 +13,284 @@ const EXERCISE_MIN_SELECT_FIELDS =
 const TECHNIQUE_MIN_SELECT_FIELDS =
   'id, name, name_fr, topic, topic_fr, subtopic, subtopic_fr, effect_type, effect_type_fr, effect_description, effect_description_fr, status'
 
-export async function createConstruct(payload) {
-  const { data, error } = await supabase
-    .from('competitive_constructs')
-    .insert(payload)
-    .select(CONSTRUCT_SELECT_FIELDS)
-    .single()
+const CONSTRUCTS_KEY = 'inticore-competitive-constructs'
+const CONSTRUCT_STEPS_KEY = 'inticore-competitive-construct-steps'
 
-  if (error) throw error
-  return data
+function normalizeConstructRow(row) {
+  if (!row || typeof row !== 'object') return null
+
+  return {
+    id: String(row.id || '').trim(),
+    created_by: String(row.created_by || '').trim(),
+    exercise_id: String(row.exercise_id || '').trim() || null,
+    title: String(row.title || '').trim(),
+    description: String(row.description || '').trim(),
+    image_url: String(row.image_url || '').trim(),
+    attack: Number(row.attack ?? 0),
+    armor: Number(row.armor ?? 0),
+    ingenuity_cost: Number(row.ingenuity_cost ?? 0),
+    effect_strength: Number(row.effect_strength ?? 0),
+    effects: String(row.effects || '').trim(),
+    status: String(row.status || 'draft').trim() || 'draft',
+    created_at: String(row.created_at || '').trim(),
+    updated_at: String(row.updated_at || '').trim(),
+    reviewed_by: String(row.reviewed_by || '').trim() || null,
+    approved_at: row.approved_at || null,
+  }
+}
+
+function normalizeConstructStepRow(row) {
+  if (!row || typeof row !== 'object') return null
+
+  return {
+    id: String(row.id || '').trim(),
+    construct_id: String(row.construct_id || '').trim(),
+    solution_path: String(row.solution_path || '').trim() || 'main',
+    step_order: Number(row.step_order ?? 0),
+    technique_id: String(row.technique_id || '').trim() || null,
+    progress_state: String(row.progress_state || '').trim(),
+    explanation: String(row.explanation || '').trim(),
+    created_at: String(row.created_at || '').trim(),
+  }
+}
+
+function readAllConstructs() {
+  const rows = Array.isArray(readLocalJson(CONSTRUCTS_KEY, [])) ? readLocalJson(CONSTRUCTS_KEY, []) : []
+  return sortByUpdatedAtDesc(rows.map(normalizeConstructRow).filter(Boolean))
+}
+
+function writeAllConstructs(rows) {
+  writeLocalJson(CONSTRUCTS_KEY, Array.isArray(rows) ? rows : [])
+}
+
+function readAllConstructSteps() {
+  const rows = Array.isArray(readLocalJson(CONSTRUCT_STEPS_KEY, [])) ? readLocalJson(CONSTRUCT_STEPS_KEY, []) : []
+  return rows
+    .map(normalizeConstructStepRow)
+    .filter(Boolean)
+    .sort((left, right) => {
+      const pathCompare = String(left.solution_path || '').localeCompare(String(right.solution_path || ''))
+      if (pathCompare !== 0) return pathCompare
+      return Number(left.step_order || 0) - Number(right.step_order || 0)
+    })
+}
+
+function writeAllConstructSteps(rows) {
+  writeLocalJson(CONSTRUCT_STEPS_KEY, Array.isArray(rows) ? rows : [])
+}
+
+function getConstructById(constructId) {
+  const safeConstructId = String(constructId || '').trim()
+  if (!safeConstructId) return null
+  return readAllConstructs().find((row) => row.id === safeConstructId) || null
+}
+
+function upsertConstructRow(row) {
+  const rows = readAllConstructs()
+  const nextRows = rows.some((entry) => entry.id === row.id)
+    ? rows.map((entry) => (entry.id === row.id ? row : entry))
+    : [row, ...rows]
+
+  writeAllConstructs(nextRows)
+  return row
+}
+
+function upsertConstructStepRow(row) {
+  const rows = readAllConstructSteps()
+  const nextRows = rows.some((entry) => entry.id === row.id)
+    ? rows.map((entry) => (entry.id === row.id ? row : entry))
+    : [...rows, row]
+
+  writeAllConstructSteps(nextRows)
+  return row
+}
+
+async function buildTechniqueSnapshotById(techniqueIds) {
+  const ids = [...new Set((Array.isArray(techniqueIds) ? techniqueIds : []).map((value) => String(value || '').trim()).filter(Boolean))]
+  if (!ids.length) return {}
+
+  const [privateItems, catalogItems] = await Promise.all([
+    listPrivateCompetitiveTechniqueInventory(''),
+    listApprovedTechniqueCatalogEntries(),
+  ])
+
+  const byId = {}
+
+  ;[...(Array.isArray(privateItems) ? privateItems : []), ...(Array.isArray(catalogItems) ? catalogItems : [])].forEach((item) => {
+    const itemId = String(item?.id || '').trim()
+    const legacyId = String(item?.legacy_technique_id || '').trim()
+    if (itemId) {
+      byId[itemId] = {
+        id: itemId,
+        name: item.name || '',
+        name_fr: item.name_fr || '',
+        topic: item.topic || '',
+        topic_fr: item.topic_fr || '',
+        subtopic: item.subtopic || '',
+        subtopic_fr: item.subtopic_fr || '',
+        effect_type: item.effect_type || '',
+        effect_type_fr: item.effect_type_fr || '',
+        effect_description: item.effect_description || '',
+        effect_description_fr: item.effect_description_fr || '',
+        status: item.status || '',
+      }
+    }
+    if (legacyId) {
+      byId[legacyId] = {
+        id: legacyId,
+        name: item.name || '',
+        name_fr: item.name_fr || '',
+        topic: item.topic || '',
+        topic_fr: item.topic_fr || '',
+        subtopic: item.subtopic || '',
+        subtopic_fr: item.subtopic_fr || '',
+        effect_type: item.effect_type || '',
+        effect_type_fr: item.effect_type_fr || '',
+        effect_description: item.effect_description || '',
+        effect_description_fr: item.effect_description_fr || '',
+        status: item.status || '',
+      }
+    }
+  })
+
+  ids.forEach((id) => {
+    if (!byId[id]) {
+      byId[id] = {
+        id,
+        name: `Technique ${id}`,
+        name_fr: '',
+        topic: '',
+        topic_fr: '',
+        subtopic: '',
+        subtopic_fr: '',
+        effect_type: '',
+        effect_type_fr: '',
+        effect_description: '',
+        effect_description_fr: '',
+        status: 'unknown',
+      }
+    }
+  })
+
+  return byId
+}
+
+export async function createConstruct(payload) {
+  const timestamp = new Date().toISOString()
+  const nextRow = normalizeConstructRow({
+    ...payload,
+    id: payload?.id || createLocalId('construct'),
+    created_at: payload?.created_at || timestamp,
+    updated_at: payload?.updated_at || timestamp,
+    status: payload?.status || 'draft',
+  })
+
+  if (!nextRow?.created_by) {
+    throw new Error('created_by is required.')
+  }
+
+  return upsertConstructRow(nextRow)
 }
 
 export async function updateConstruct(constructId, userId, payload) {
-  const { data, error } = await supabase
-    .from('competitive_constructs')
-    .update(payload)
-    .eq('id', constructId)
-    .eq('created_by', userId)
-    .select(CONSTRUCT_SELECT_FIELDS)
-    .single()
+  const current = getConstructById(constructId)
+  if (!current || current.created_by !== String(userId || '').trim()) {
+    throw new Error('Construct not found.')
+  }
 
-  if (error) throw error
-  return data
+  const nextRow = normalizeConstructRow({
+    ...current,
+    ...payload,
+    id: current.id,
+    created_by: current.created_by,
+    updated_at: new Date().toISOString(),
+  })
+
+  return upsertConstructRow(nextRow)
 }
 
 export async function listOwnConstructs(userId) {
-  const { data, error } = await supabase
-    .from('competitive_constructs')
-    .select(CONSTRUCT_SELECT_FIELDS)
-    .eq('created_by', userId)
-    .order('updated_at', { ascending: false })
-
-  if (error) throw error
-  return Array.isArray(data) ? data : []
+  const ownerUserId = String(userId || '').trim()
+  return readAllConstructs().filter((row) => row.created_by === ownerUserId)
 }
 
 export async function listVisibleConstructs(userId) {
-  const { data, error } = await supabase
-    .from('competitive_constructs')
-    .select(CONSTRUCT_SELECT_FIELDS)
-    .eq('created_by', userId)
-    .order('updated_at', { ascending: false })
-
-  if (error) throw error
-  return Array.isArray(data) ? data : []
+  return listOwnConstructs(userId)
 }
 
 export async function listApprovedConstructs(userId) {
-  const { data, error } = await supabase
-    .from('competitive_constructs')
-    .select(CONSTRUCT_SELECT_FIELDS)
-    .eq('created_by', userId)
-    .eq('status', 'approved')
-    .order('updated_at', { ascending: false })
-
-  if (error) throw error
-  return Array.isArray(data) ? data : []
+  const ownerUserId = String(userId || '').trim()
+  return readAllConstructs().filter((row) => row.created_by === ownerUserId && row.status === 'approved')
 }
 
 export async function listProposedConstructsForReview() {
-  const { data, error } = await supabase
-    .from('competitive_constructs')
-    .select(CONSTRUCT_SELECT_FIELDS)
-    .eq('status', 'proposed')
-    .order('updated_at', { ascending: false })
-
-  if (error) throw error
-  return Array.isArray(data) ? data : []
+  return readAllConstructs().filter((row) => row.status === 'proposed')
 }
 
 export async function approveConstruct(constructId, teacherUserId) {
-  const payload = {
-    status: 'approved',
-    reviewed_by: teacherUserId,
-    approved_at: new Date().toISOString(),
+  const current = getConstructById(constructId)
+  if (!current || current.status !== 'proposed') {
+    throw new Error('Construct not found.')
   }
 
-  const { data, error } = await supabase
-    .from('competitive_constructs')
-    .update(payload)
-    .eq('id', constructId)
-    .eq('status', 'proposed')
-    .select(CONSTRUCT_SELECT_FIELDS)
-    .single()
-
-  if (error) throw error
-  return data
+  return upsertConstructRow(normalizeConstructRow({
+    ...current,
+    status: 'approved',
+    reviewed_by: String(teacherUserId || '').trim(),
+    approved_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }))
 }
 
 export async function rejectConstruct(constructId, teacherUserId) {
-  const payload = {
-    status: 'rejected',
-    reviewed_by: teacherUserId,
-    approved_at: null,
+  const current = getConstructById(constructId)
+  if (!current || current.status !== 'proposed') {
+    throw new Error('Construct not found.')
   }
 
-  const { data, error } = await supabase
-    .from('competitive_constructs')
-    .update(payload)
-    .eq('id', constructId)
-    .eq('status', 'proposed')
-    .select(CONSTRUCT_SELECT_FIELDS)
-    .single()
-
-  if (error) throw error
-  return data
+  return upsertConstructRow(normalizeConstructRow({
+    ...current,
+    status: 'rejected',
+    reviewed_by: String(teacherUserId || '').trim(),
+    approved_at: null,
+    updated_at: new Date().toISOString(),
+  }))
 }
 
 export async function deleteOwnConstruct(constructId, userId) {
-  const { error } = await supabase
-    .from('competitive_constructs')
-    .delete()
-    .eq('id', constructId)
-    .eq('created_by', userId)
+  const safeConstructId = String(constructId || '').trim()
+  const ownerUserId = String(userId || '').trim()
 
-  if (error) throw error
+  writeAllConstructs(
+    readAllConstructs().filter((row) => !(row.id === safeConstructId && row.created_by === ownerUserId))
+  )
+  writeAllConstructSteps(
+    readAllConstructSteps().filter((row) => row.construct_id !== safeConstructId)
+  )
   return true
 }
-export async function listConstructSteps(constructId) {
-  const { data, error } = await supabase
-    .from('competitive_construct_steps')
-    .select(CONSTRUCT_STEP_SELECT_FIELDS)
-    .eq('construct_id', constructId)
-    .order('solution_path', { ascending: true })
-    .order('step_order', { ascending: true })
 
-  if (error) throw error
-  return Array.isArray(data) ? data : []
+export async function listConstructSteps(constructId) {
+  const safeConstructId = String(constructId || '').trim()
+  return readAllConstructSteps().filter((row) => row.construct_id === safeConstructId)
 }
 
 export async function getConstructDetail(constructId) {
-  const { data: construct, error: constructError } = await supabase
-    .from('competitive_constructs')
-    .select(CONSTRUCT_SELECT_FIELDS)
-    .eq('id', constructId)
-    .single()
-
-  if (constructError) throw constructError
+  const construct = getConstructById(constructId)
+  if (!construct) {
+    throw new Error('Construct not found.')
+  }
 
   const steps = await listConstructSteps(constructId)
-
-  let exercise = null
-  if (construct?.exercise_id) {
-    const { data: exerciseData, error: exerciseError } = await supabase
-      .from('competitive_exercises')
-      .select(EXERCISE_MIN_SELECT_FIELDS)
-      .eq('id', construct.exercise_id)
-      .maybeSingle()
-
-    if (exerciseError) throw exerciseError
-    exercise = exerciseData || null
-  }
-
-  const techniqueIds = [...new Set(steps.map((step) => step.technique_id).filter(Boolean))]
-  let techniquesById = {}
-
-  if (techniqueIds.length > 0) {
-    const { data: techniques, error: techniquesError } = await supabase
-      .from('competitive_techniques')
-      .select(TECHNIQUE_MIN_SELECT_FIELDS)
-      .in('id', techniqueIds)
-
-    if (techniquesError) throw techniquesError
-
-    techniquesById = (Array.isArray(techniques) ? techniques : []).reduce((acc, row) => {
-      acc[row.id] = row
-      return acc
-    }, {})
-
-    const missingTechniqueIds = techniqueIds.filter((id) => !techniquesById[id])
-    if (missingTechniqueIds.length > 0) {
-      const { data: catalogTechniques, error: catalogTechniquesError } = await supabase
-        .from('competitive_technique_catalog')
-        .select('id, legacy_technique_id, name, name_fr, topic, topic_fr, subtopic, subtopic_fr, effect_type, effect_type_fr, effect_description, effect_description_fr, status')
-        .in('legacy_technique_id', missingTechniqueIds)
-
-      if (catalogTechniquesError) throw catalogTechniquesError
-
-      ;(Array.isArray(catalogTechniques) ? catalogTechniques : []).forEach((row) => {
-        if (!row.legacy_technique_id) return
-        techniquesById[row.legacy_technique_id] = {
-          id: row.legacy_technique_id,
-          name: row.name,
-          name_fr: row.name_fr,
-          topic: row.topic,
-          topic_fr: row.topic_fr,
-          subtopic: row.subtopic,
-          subtopic_fr: row.subtopic_fr,
-          effect_type: row.effect_type,
-          effect_type_fr: row.effect_type_fr,
-          effect_description: row.effect_description,
-          effect_description_fr: row.effect_description_fr,
-          status: row.status,
-        }
-      })
-    }
-  }
+  const [exerciseRows, techniquesById] = await Promise.all([
+    construct.exercise_id ? listCompetitiveExercisesByIds([construct.exercise_id]) : Promise.resolve([]),
+    buildTechniqueSnapshotById(steps.map((step) => step.technique_id)),
+  ])
 
   return {
     construct,
     steps,
-    exercise,
+    exercise: Array.isArray(exerciseRows) ? exerciseRows[0] || null : null,
     techniquesById,
   }
 }
@@ -226,48 +305,40 @@ export async function getApprovedConstructDetailForTraining(constructId) {
 }
 
 export async function listConstructExerciseSummariesByIds(exerciseIds) {
-  const ids = [...new Set((exerciseIds || []).filter(Boolean))]
-  if (!ids.length) return []
-
-  const { data, error } = await supabase
-    .from('competitive_exercises')
-    .select(EXERCISE_MIN_SELECT_FIELDS)
-    .in('id', ids)
-
-  if (error) throw error
-  return Array.isArray(data) ? data : []
+  return listCompetitiveExercisesByIds(exerciseIds)
 }
 
 export async function addConstructStep(payload) {
-  const { data, error } = await supabase
-    .from('competitive_construct_steps')
-    .insert(payload)
-    .select(CONSTRUCT_STEP_SELECT_FIELDS)
-    .single()
+  const nextRow = normalizeConstructStepRow({
+    ...payload,
+    id: payload?.id || createLocalId('construct-step'),
+    created_at: payload?.created_at || new Date().toISOString(),
+  })
 
-  if (error) throw error
-  return data
+  if (!nextRow?.construct_id) {
+    throw new Error('construct_id is required.')
+  }
+
+  return upsertConstructStepRow(nextRow)
 }
 
 export async function updateConstructStep(stepId, payload) {
-  const { data, error } = await supabase
-    .from('competitive_construct_steps')
-    .update(payload)
-    .eq('id', stepId)
-    .select(CONSTRUCT_STEP_SELECT_FIELDS)
-    .single()
+  const safeStepId = String(stepId || '').trim()
+  const current = readAllConstructSteps().find((row) => row.id === safeStepId) || null
+  if (!current) {
+    throw new Error('Construct step not found.')
+  }
 
-  if (error) throw error
-  return data
+  return upsertConstructStepRow(normalizeConstructStepRow({
+    ...current,
+    ...payload,
+    id: current.id,
+  }))
 }
 
 export async function deleteConstructStep(stepId) {
-  const { error } = await supabase
-    .from('competitive_construct_steps')
-    .delete()
-    .eq('id', stepId)
-
-  if (error) throw error
+  const safeStepId = String(stepId || '').trim()
+  writeAllConstructSteps(readAllConstructSteps().filter((row) => row.id !== safeStepId))
   return true
 }
 
@@ -277,4 +348,3 @@ export {
   EXERCISE_MIN_SELECT_FIELDS,
   TECHNIQUE_MIN_SELECT_FIELDS,
 }
-

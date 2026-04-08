@@ -9,6 +9,7 @@ export function getTechniqueTranslation(row, language = 'es') {
       name: '',
       effectDescription: '',
       workedExample: '',
+      applicationStructure: '',
     }
   }
 
@@ -17,6 +18,7 @@ export function getTechniqueTranslation(row, language = 'es') {
       name: row.name_fr || row.name || '',
       effectDescription: row.effect_description_fr || row.effect_description || '',
       workedExample: row.worked_example_fr || row.worked_example || '',
+      applicationStructure: row.application_structure_fr || row.application_structure || row.worked_example_fr || row.worked_example || '',
     }
   }
 
@@ -24,6 +26,7 @@ export function getTechniqueTranslation(row, language = 'es') {
     name: row.name || '',
     effectDescription: row.effect_description || '',
     workedExample: row.worked_example || '',
+    applicationStructure: row.application_structure || row.application_structure_fr || row.worked_example || row.worked_example_fr || '',
   }
 }
 

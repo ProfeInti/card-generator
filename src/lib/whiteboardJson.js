@@ -62,11 +62,11 @@ export function buildWhiteboardExercisesTemplateJson() {
     notes: [
       'Use exactly this structure whenever possible: root object with "format", "entity", "version", and an "exercises" array.',
       'Each exercise must be one object inside the "exercises" array.',
-      'Recommended canonical field names are exactly these: "id", "topic", "title", "sourceBook", "sourceAuthor", "sourcePage", "sourceSection", "sourceReference", "statement", "officialResult", "dataItems", "antiproblem". Do not invent additional semantic fields when one of these already covers the content.',
+      'Recommended canonical field names are exactly these: "id", "topic", "title", "sourceBook", "sourceAuthor", "sourcePage", "sourceSection", "sourceReference", "statement", "officialResult", "dataItems", "conditionItems", "clarificationItems", "taskItems", and "antiproblem".',
       'Required plain fields: "topic" and "title".',
       'The "title" must include the exercise number explicitly so the record can be identified clearly. Example: "Ejercicio 12 - Ecuacion cuadratica basica".',
       'Optional source metadata fields are plain text or number: "sourceBook", "sourceAuthor", "sourcePage", "sourceSection", "sourceReference".',
-      'Rich fields are: "statement", "officialResult", "antiproblem", and each item inside "dataItems".',
+      'Rich fields are: "statement", "officialResult", "antiproblem", and each item inside "dataItems", "conditionItems", "clarificationItems", and "taskItems".',
       'Every rich field accepts either editor HTML or plain text.',
       'If plain text contains inline math, wrap each expression with $...$ so the importer converts it to the internal math-inline HTML used by the app and the equations render correctly in the whiteboard.',
       'Use standard LaTeX notation inside $...$. Example for a rich field: "Resuelve $x^2+5x+6=0$."',
@@ -76,12 +76,17 @@ export function buildWhiteboardExercisesTemplateJson() {
       'Do not leave mathematical expressions in ambiguous plain text when they should render as math. Prefer "$x^2+5x+6=0$" over "x^2+5x+6=0".',
       '"statement" must reproduce the exercise itself, not hints or commentary about how to solve it.',
       '"officialResult" must contain only the official answer, final result, or conclusion expected from the exercise. It must not contain a full worked solution unless the source explicitly presents it as part of the official answer.',
-      'Use "dataItems" as an array with up to 10 entries.',
-      'Each entry in "dataItems" should ideally contain one atomic fact or one directly stated relation so nodes remain reusable inside the whiteboard.',
-      'Keep each data item brief and atomic. Prefer one fact, value, or relation per item, stated as compactly as possible without losing precision.',
-      'If the exercise includes explicit consignas, tasks, or inciso prompts such as "calcula", "demuestra", "justifica", "encuentra", or items like "(a)", "(b)", "(c)", those requested prompts must also appear in "dataItems" as explicit entries. Do not omit what the exercise is asking the student to do.',
-      '"dataItems" must contain only elements extracted directly from the exercise statement: conditions, premises, declared facts, numeric values, geometric relations, or any other data that the statement literally gives.',
-      '"dataItems" must not contain hints, guidance, suggested methods, reformulations, inferred facts, derived intermediate steps, the resolution, or the final answer.',
+      'Use "dataItems" for direct data only: values, equations, objects, declared relations, named elements, and literal givens.',
+      'Use "conditionItems" for explicit hypotheses or constraints such as "x>0", "ABC is isosceles", "f is continuous on [a,b]", or "suppose that...".',
+      'Use "clarificationItems" for side remarks, conventions, reminders, domain notes, or teacher/source clarifications that are part of the statement context but are not givens or tasks.',
+      'Use "taskItems" for explicit consignas, goals, inciso prompts, and requested actions such as "calcula", "demuestra", "justifica", "(a)", "(b)", "(c)".',
+      'Each entry in these arrays should be one atomic mathematical object, brief and directly reusable in the notebook.',
+      'Do not invent, derive, expand, split, or anticipate notebook seeds beyond the literal statement. If the statement does not say it explicitly, do not create a seed for it.',
+      'Never create seeds from intermediate deductions, hidden coefficients, obvious next steps, reformulations, or teacher-style hints unless the source itself states them explicitly.',
+      'Seeds must stay at the same semantic level as the statement. They are not allowed to advance the resolution, add interpretation, or encode what a student is expected to infer later.',
+      'If there is no explicit condition in the statement, "conditionItems" must be an empty array.',
+      'If there is no explicit clarification, convention, or remark in the statement, "clarificationItems" must be an empty array.',
+      'For backward compatibility, the importer still accepts legacy "dataItems" alone and will classify them heuristically when the newer arrays are absent.',
       '"antiproblem" must contain only the answer-template statement that responds to the problem, but it must remain intentionally incomplete so the student can fill in the actual answer. Example: "Los puntos de interseccion son...".',
       'Keep the language of all fields consistent with the source or the intended classroom language. Avoid mixing Spanish, English, and French in the same whiteboard exercise unless the exercise is explicitly multilingual.',
       'Empty strings inside "dataItems" are allowed but will be ignored by the importer.',
@@ -102,8 +107,11 @@ export function buildWhiteboardExercisesTemplateJson() {
         officialResult: '<p><span data-type="math-inline" data-latex="x=-2"></span> y <span data-type="math-inline" data-latex="x=-3"></span></p>',
         dataItems: [
           'La ecuacion dada es $x^2+5x+6=0$.',
+        ],
+        conditionItems: [],
+        clarificationItems: [],
+        taskItems: [
           'Se pide resolver la ecuacion.',
-          'Los coeficientes dados por el enunciado son $a=1$, $b=5$ y $c=6$.',
         ],
         antiproblem: 'Las soluciones explicitas son...',
       },
@@ -117,7 +125,7 @@ export function buildWhiteboardExerciseExportJson(exercises) {
     entity: 'whiteboard_exercises',
     version: 1,
     exportedAt: new Date().toISOString(),
-    notes: 'Canonical field names are topic, title, sourceBook, sourceAuthor, sourcePage, sourceSection, sourceReference, statement, officialResult, dataItems, and antiproblem. The title must include the exercise number explicitly. Rich fields accept editor HTML or plain text with inline math wrapped in $...$ so equations render correctly. Write every field with the minimum number of words needed to remain clear, preferring compact formulas and direct mathematical statements over long prose. In dataItems, store only facts or data extracted directly and literally from the exercise statement, ideally one atomic fact per item, written as briefly as possible without losing precision. If the statement includes explicit consignas, tasks, or inciso prompts, include those requested prompts there as explicit items too. Do not store hints, guidance, suggested methods, inferred facts, reformulations, derived steps, the resolution, or the final answer there. In officialResult, store only the official answer or expected conclusion. In antiproblem, store only the answer-template statement, keeping it intentionally incomplete so the student can fill in the answer later, for example "Los puntos de interseccion son...".',
+    notes: 'Canonical field names are topic, title, sourceBook, sourceAuthor, sourcePage, sourceSection, sourceReference, statement, officialResult, dataItems, conditionItems, clarificationItems, taskItems, and antiproblem. Use dataItems for direct givens, conditionItems for explicit hypotheses or constraints, clarificationItems for explicit contextual notes or reminders, and taskItems for explicit consignas. Do not invent or derive seeds beyond the literal statement. If the statement does not contain explicit conditions or clarifications, leave conditionItems and clarificationItems as empty arrays. The title must include the exercise number explicitly. Rich fields accept editor HTML or plain text with inline math wrapped in $...$. In officialResult, store only the official answer or expected conclusion. In antiproblem, store only the answer-template statement.',
     exercises,
   }
 }
@@ -157,10 +165,28 @@ export function normalizeWhiteboardExerciseImportItem(item) {
   const source = item?.source && typeof item.source === 'object' ? item.source : {}
 
   const dataItemsRaw = firstFilled(item?.dataItems, item?.datos, item?.data, item?.facts)
+  const conditionItemsRaw = firstFilled(item?.conditionItems, item?.condiciones, item?.conditions, item?.hypotheses)
+  const clarificationItemsRaw = firstFilled(item?.clarificationItems, item?.aclaraciones, item?.clarifications, item?.notes)
+  const taskItemsRaw = firstFilled(item?.taskItems, item?.consignas, item?.tasks, item?.prompts)
   const dataItems = Array.isArray(dataItemsRaw)
     ? dataItemsRaw
     : String(dataItemsRaw || '').trim()
       ? [dataItemsRaw]
+      : []
+  const conditionItems = Array.isArray(conditionItemsRaw)
+    ? conditionItemsRaw
+    : String(conditionItemsRaw || '').trim()
+      ? [conditionItemsRaw]
+      : []
+  const clarificationItems = Array.isArray(clarificationItemsRaw)
+    ? clarificationItemsRaw
+    : String(clarificationItemsRaw || '').trim()
+      ? [clarificationItemsRaw]
+      : []
+  const taskItems = Array.isArray(taskItemsRaw)
+    ? taskItemsRaw
+    : String(taskItemsRaw || '').trim()
+      ? [taskItemsRaw]
       : []
 
   return {
@@ -175,6 +201,9 @@ export function normalizeWhiteboardExerciseImportItem(item) {
     statement: normalizeWhiteboardRichField(firstFilled(item?.statement, item?.enunciado, item?.problemStatement)),
     officialResult: normalizeWhiteboardRichField(firstFilled(item?.officialResult, item?.respuestaOficial, item?.officialAnswer, item?.finalAnswer)),
     dataItems: dataItems.map((entry) => normalizeWhiteboardRichField(entry)).filter(Boolean),
+    conditionItems: conditionItems.map((entry) => normalizeWhiteboardRichField(entry)).filter(Boolean),
+    clarificationItems: clarificationItems.map((entry) => normalizeWhiteboardRichField(entry)).filter(Boolean),
+    taskItems: taskItems.map((entry) => normalizeWhiteboardRichField(entry)).filter(Boolean),
     antiproblem: normalizeWhiteboardRichField(firstFilled(item?.antiproblem, item?.antiproblema, item?.antiProblem)),
   }
 }

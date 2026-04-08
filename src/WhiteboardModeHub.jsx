@@ -238,7 +238,7 @@ export default function WhiteboardModeHub({ onOpenBoard, onOpenExercises, onBack
                         }}
                       >
                         <div className="saved-item-title">{workspace.exercise_title || 'Untitled whiteboard'}</div>
-                        <div className="saved-item-meta">Synced in Supabase</div>
+                        <div className="saved-item-meta">Synced in local collaboration server</div>
                         <div className="saved-item-tags">
                           {workspace.source_workspace_id ? 'Private copy' : 'Root whiteboard'} | {(workspace.visibility || 'private') === 'public' ? 'Public' : 'Private'} | Nodes: {workspace.nodes?.length || 0} | Links: {workspace.links?.length || 0}
                         </div>

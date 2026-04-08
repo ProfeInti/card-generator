@@ -16,10 +16,10 @@ import {
   resolveMatchDeconstructionAttempt,
   submitMatchMulligan,
   surrenderMultiplayerMatch,
+  MULTIPLAYER_DISABLED_MESSAGE,
 } from './data/multiplayerLobbyRepo'
 import { listProfileUsernamesByIds } from './data/profilesRepo'
 import { DEFAULT_ART_DATA_URL } from './lib/cardWorkspace'
-import { supabase } from './lib/supabase'
 import { normalizeMathHtmlInput, renderMathInHtml } from './lib/mathHtml'
 
 const BOARD_SLOT_COUNT = 5
@@ -757,7 +757,7 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
         setNotice('Battlefield state loaded.')
       }
     } catch (err) {
-      setError(err?.message || 'Could not load multiplayer match.')
+      setError(err?.message || MULTIPLAYER_DISABLED_MESSAGE)
     } finally {
       if (!silent) {
         setLoading(false)
@@ -787,42 +787,6 @@ export default function MultiplayerMatch({ session, matchId, onBackToLobby, onLo
 
     return () => window.clearInterval(intervalId)
   }, [match?.turn_deadline_at])
-
-  useEffect(() => {
-    if (!matchId) return undefined
-
-    const refreshFromRealtime = () => {
-      loadMatch({ silent: true })
-    }
-
-    const channel = supabase
-      .channel(`mp-match-${matchId}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mp_matches', filter: `id=eq.${matchId}` },
-        refreshFromRealtime
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mp_match_players', filter: `match_id=eq.${matchId}` },
-        refreshFromRealtime
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mp_match_cards', filter: `match_id=eq.${matchId}` },
-        refreshFromRealtime
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'mp_match_constructs', filter: `match_id=eq.${matchId}` },
-        refreshFromRealtime
-      )
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [loadMatch, matchId])
 
   const orderedPlayers = useMemo(() => {
     if (!match) return []

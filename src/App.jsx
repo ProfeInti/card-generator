@@ -1,12 +1,15 @@
 
-import { lazy, Suspense, useCallback, useState } from 'react'
+import { lazy, Suspense, startTransition, useCallback, useEffect, useState } from 'react'
 import './App.css'
 
 import AppWorkspaceRouter from './AppWorkspaceRouter'
 
 import 'katex/dist/katex.min.css'
 
-import { supabase } from './lib/supabase'
+import {
+  loginWithLocalAuth,
+  registerWithLocalAuth,
+} from './lib/authClient'
 import { emailToUsername } from './lib/profileSession'
 import { useAppSession } from './hooks/useAppSession'
 
@@ -47,37 +50,24 @@ function AuthScreen({ onAuthSuccess }) {
 
     try {
       if (mode === 'register') {
-        const { data, error: signUpError } = await supabase.auth.signUp({
+        const username = emailToUsername(normalizedEmail)
+        const { user } = await registerWithLocalAuth({
           email: normalizedEmail,
           password,
-          options: {
-            data: {
-              username: emailToUsername(normalizedEmail),
-            },
-          },
+          username,
         })
 
-        if (signUpError) throw signUpError
-
-        if (!data.session) {
-          setNotice('Account created. Check your email to confirm your account.')
-          setMode('login')
-          return
-        }
-
-        if (data.user) {
-          await onAuthSuccess(data.user)
+        if (user) {
+          await onAuthSuccess(user)
         }
       } else {
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        const { user } = await loginWithLocalAuth({
           email: normalizedEmail,
           password,
         })
 
-        if (signInError) throw signInError
-
-        if (data.user) {
-          await onAuthSuccess(data.user)
+        if (user) {
+          await onAuthSuccess(user)
         }
       }
     } catch (err) {
@@ -171,17 +161,19 @@ function App() {
   const [entryScreen, setEntryScreen] = useState('welcome')
   const [workspaceTarget, setWorkspaceTarget] = useState(null)
   const [activeMultiplayerMatchId, setActiveMultiplayerMatchId] = useState(null)
+  const [activeMathDungeonRunId, setActiveMathDungeonRunId] = useState(null)
 
   const handleSessionCleared = useCallback(() => {
     setWorkspaceTarget(null)
+    setActiveMathDungeonRunId(null)
   }, [])
 
-  const { bootLoading, hydrateSessionFromUser, session, signOutAndClearSession } = useAppSession({
+  const { bootLoading, hydrateLocalSession, session, signOutAndClearSession } = useAppSession({
     onSessionCleared: handleSessionCleared,
   })
 
   const handleAuthSuccess = async (user) => {
-    await hydrateSessionFromUser(user, { blockOnProfile: false, source: 'auth_success' })
+    hydrateLocalSession(user, { source: 'auth_success' })
     setWorkspaceTarget(null)
   }
 
@@ -189,6 +181,18 @@ function App() {
     await signOutAndClearSession()
     setEntryScreen('welcome')
   }
+
+  useEffect(() => {
+    if (!session || workspaceTarget || typeof window === 'undefined') return
+
+    const url = new URL(window.location.href)
+    const sharedNotebookCode = String(url.searchParams.get('notebookShare') || '').trim()
+    if (!sharedNotebookCode) return
+
+    startTransition(() => {
+      setWorkspaceTarget('notebooks')
+    })
+  }, [session, workspaceTarget])
 
   if (bootLoading) {
     return (
@@ -211,6 +215,7 @@ function App() {
 
   return (
     <AppWorkspaceRouter
+      activeMathDungeonRunId={activeMathDungeonRunId}
       activeMultiplayerMatchId={activeMultiplayerMatchId}
       renderCardWorkspace={(initialView, onBackToMenu) => (
         <Suspense
@@ -233,6 +238,7 @@ function App() {
       )}
       onLogout={handleLogout}
       session={session}
+      setActiveMathDungeonRunId={setActiveMathDungeonRunId}
       setActiveMultiplayerMatchId={setActiveMultiplayerMatchId}
       setWorkspaceTarget={setWorkspaceTarget}
       workspaceTarget={workspaceTarget}

@@ -21,9 +21,20 @@ import {
   toCardResponse,
   toNumber,
 } from './lib/cardWorkspace'
+import { createLocalId, readLocalJson, writeLocalJson } from './lib/localStore'
 import * as htmlToImage from 'html-to-image'
 import jsPDF from 'jspdf'
-import { supabase } from './lib/supabase'
+
+const USER_CARDS_STORAGE_KEY = 'inticore-user-cards'
+
+function readStoredCards() {
+  return Array.isArray(readLocalJson(USER_CARDS_STORAGE_KEY, [])) ? readLocalJson(USER_CARDS_STORAGE_KEY, []) : []
+}
+
+function writeStoredCards(rows) {
+  writeLocalJson(USER_CARDS_STORAGE_KEY, Array.isArray(rows) ? rows : [])
+}
+
 export default function CardWorkspace({ session, onLogout, initialView = 'generator', onBackToMenu }) {
   const [title, setTitle] = useState(DEFAULTS.title)
   const [titleColor, setTitleColor] = useState(DEFAULTS.titleColor)
@@ -98,14 +109,11 @@ export default function CardWorkspace({ session, onLogout, initialView = 'genera
     setLoadingCards(true)
 
     try {
-      const { data, error } = await supabase
-        .from('user_cards')
-        .select('id, name, card_key, quantity, theme, subtheme, effect_type, difficulty, rarity, is_favorite, tags, created_at, updated_at')
-        .eq('user_id', session.userId)
-        .order('updated_at', { ascending: false })
+      const normalized = readStoredCards()
+        .filter((row) => row.user_id === session.userId)
+        .sort((left, right) => String(right.updated_at || '').localeCompare(String(left.updated_at || '')))
+        .map(toCardResponse)
 
-      if (error) throw error
-      const normalized = Array.isArray(data) ? data.map(toCardResponse) : []
       setSavedCards(normalized)
       console.log('[cards] load done', { userId: session.userId, count: normalized.length })
     } catch (err) {
@@ -275,6 +283,7 @@ export default function CardWorkspace({ session, onLogout, initialView = 'genera
     try {
       const now = new Date().toISOString()
       const payload = {
+        id: createLocalId('user-card'),
         user_id: session.userId,
         name,
         card_key: name.toLowerCase().replace(/\s+/g, '-'),
@@ -290,11 +299,25 @@ export default function CardWorkspace({ session, onLogout, initialView = 'genera
         updated_at: now,
       }
 
-      const { error } = await supabase.from('user_cards').upsert(payload, {
-        onConflict: 'user_id,name',
-      })
+      const storedCards = readStoredCards()
+      const existingCard = storedCards.find((row) => row.user_id === session.userId && row.name === name) || null
+      const nextCard = existingCard
+        ? {
+            ...existingCard,
+            ...payload,
+            id: existingCard.id,
+            created_at: existingCard.created_at || now,
+          }
+        : {
+            ...payload,
+            created_at: now,
+          }
 
-      if (error) throw error
+      writeStoredCards(
+        existingCard
+          ? storedCards.map((row) => (row.id === existingCard.id ? nextCard : row))
+          : [nextCard, ...storedCards]
+      )
 
       setSaveName('')
       if (activeView === 'collection') {
@@ -312,16 +335,12 @@ export default function CardWorkspace({ session, onLogout, initialView = 'genera
     setLoadingCardId(card.id)
 
     try {
-      const { data, error } = await supabase
-        .from('user_cards')
-        .select('id, name, state_json, theme, subtheme, effect_type, difficulty, rarity, is_favorite, tags, created_at, updated_at')
-        .eq('id', card.id)
-        .eq('user_id', session.userId)
-        .single()
+      const storedCard = readStoredCards().find((row) => row.id === card.id && row.user_id === session.userId) || null
+      if (!storedCard) {
+        throw new Error('Could not load card for editing.')
+      }
 
-      if (error) throw error
-
-      const normalized = toCardResponse(data)
+      const normalized = toCardResponse(storedCard)
       if (normalized.state) {
         applyCardState(normalized.state)
       }
@@ -341,13 +360,9 @@ export default function CardWorkspace({ session, onLogout, initialView = 'genera
     if (!ok) return
 
     try {
-      const { error } = await supabase
-        .from('user_cards')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', session.userId)
-
-      if (error) throw error
+      writeStoredCards(
+        readStoredCards().filter((row) => !(row.id === id && row.user_id === session.userId))
+      )
       await loadSavedCards()
     } catch (err) {
       alert(err?.message || 'Could not delete card.')

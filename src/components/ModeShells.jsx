@@ -23,6 +23,7 @@ export function MainMenu({
   session,
   onOpenCreative,
   onOpenCompetitive,
+  onOpenNotebooks,
   onOpenMathDungeons,
   onOpenMultiplayer,
   onOpenWhiteboard,
@@ -40,6 +41,7 @@ export function MainMenu({
         <div className="menu-actions">
           <button type="button" className="btn menu-btn" onClick={onOpenCreative}>Creative Mode</button>
           <button type="button" className="btn menu-btn" onClick={onOpenCompetitive}>Competitive Mode</button>
+          <button type="button" className="btn menu-btn" onClick={onOpenNotebooks}>Notebooks</button>
           <button type="button" className="btn menu-btn" onClick={onOpenMathDungeons}>Math Dungeons</button>
           <button type="button" className="btn menu-btn" onClick={onOpenWhiteboard}>Math Whiteboard</button>
           <button type="button" className="btn menu-btn" onClick={onOpenMultiplayer}>Multiplayer</button>

@@ -1,0 +1,34 @@
+{
+  "rewards": [
+    {
+      "id": "rusted-key",
+      "name": "Rusted Observatory Key",
+      "rewardType": "key-item",
+      "rarity": "rare",
+      "description": "A heavy iron key engraved with faded trigonometric markings.",
+      "reward_json": {
+        "id": "rusted-key",
+        "name": "Rusted Observatory Key",
+        "rewardType": "key-item",
+        "rarity": "rare",
+        "effect": "Unlocks the observatory door in the final wing.",
+        "description": "A heavy iron key engraved with faded trigonometric markings."
+      }
+    },
+    {
+      "id": "focus-tonic",
+      "name": "Tonic of Quiet Focus",
+      "rewardType": "consumable",
+      "rarity": "common",
+      "description": "A small crystal vial that restores composure after a riddle.",
+      "reward_json": {
+        "id": "focus-tonic",
+        "name": "Tonic of Quiet Focus",
+        "rewardType": "consumable",
+        "rarity": "common",
+        "effect": "Recovers focus when the engine supports consumables.",
+        "description": "A small crystal vial that restores composure after a riddle."
+      }
+    }
+  ]
+}

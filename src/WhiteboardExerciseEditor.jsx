@@ -23,9 +23,35 @@ import {
 
 const WHITEBOARD_DATA_SLOTS = 10
 const EDITOR_FONT_FAMILY = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'
+const STRUCTURED_ITEM_COLUMNS = [
+  {
+    id: 'dataItems',
+    label: 'Datos',
+    helper: 'Hechos directos, valores, ecuaciones dadas y relaciones literales del enunciado.',
+  },
+  {
+    id: 'conditionItems',
+    label: 'Condiciones',
+    helper: 'Hipótesis, restricciones, dominios y suposiciones explícitas.',
+  },
+  {
+    id: 'clarificationItems',
+    label: 'Aclaraciones',
+    helper: 'Notas de contexto, convenciones, recordatorios o aclaraciones del docente/fuente.',
+  },
+  {
+    id: 'taskItems',
+    label: 'Consignas',
+    helper: 'Acciones pedidas, incisos, metas y preguntas a resolver.',
+  },
+]
 
 function buildDataItems(items) {
   return Array.from({ length: WHITEBOARD_DATA_SLOTS }, (_, index) => items?.[index] || '')
+}
+
+function buildStructuredItems(items) {
+  return Array.isArray(items) ? items.filter(Boolean) : []
 }
 
 function toEditorForm(record) {
@@ -33,16 +59,32 @@ function toEditorForm(record) {
     ...buildEmptyWhiteboardExercise(),
     ...record,
     dataItems: buildDataItems(record?.dataItems),
+    conditionItems: buildStructuredItems(record?.conditionItems),
+    clarificationItems: buildStructuredItems(record?.clarificationItems),
+    taskItems: buildStructuredItems(record?.taskItems),
   }
 }
 
-export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }) {
+const DEFAULT_INTRO_LINES = [
+  'Topic and title as the minimum identity, structured source metadata, and rich math content to seed the whiteboard.',
+  'Keep every field concise: use the fewest words possible while preserving mathematical clarity.',
+  'When importing or drafting content outside the editor, wrap inline math with $...$ so equations render correctly after conversion.',
+  'Inside equations, use English math notation for functions and abbreviations: write `sin t` instead of `sen t`.',
+]
+
+export default function WhiteboardExerciseEditor({
+  onBackToWhiteboard,
+  session,
+  screenTitle = 'Whiteboard Exercise Editor',
+  introLines = DEFAULT_INTRO_LINES,
+  backLabel = 'Back to Module',
+}) {
   const [records, setRecords] = useState(() => listWhiteboardExercises())
   const [form, setForm] = useState(() => toEditorForm(buildEmptyWhiteboardExercise()))
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
-  const [activeDataIndex, setActiveDataIndex] = useState(0)
+  const [activeStructuredItem, setActiveStructuredItem] = useState({ columnId: 'dataItems', index: 0 })
   const importFileRef = useRef(null)
 
   const canSave = useMemo(() => {
@@ -56,16 +98,116 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
 
   const applyRecord = (record) => {
     setForm(toEditorForm(record))
-    setActiveDataIndex(0)
+    setActiveStructuredItem({ columnId: 'dataItems', index: 0 })
     setError('')
     setNotice('Exercise loaded into the editor.')
   }
 
-  const updateDataItem = (index, value) => {
+  const updateStructuredItem = (columnId, index, value) => {
     setForm((prev) => {
-      const nextItems = buildDataItems(prev.dataItems)
+      const builder = columnId === 'dataItems' ? buildDataItems : buildStructuredItems
+      const nextItems = builder(prev[columnId])
       nextItems[index] = value
-      return { ...prev, dataItems: nextItems }
+      return { ...prev, [columnId]: nextItems }
+    })
+  }
+
+  const addStructuredItem = (columnId) => {
+    setForm((prev) => {
+      const builder = columnId === 'dataItems' ? buildDataItems : buildStructuredItems
+      const currentItems = builder(prev[columnId])
+      if (columnId === 'dataItems' && currentItems.every(Boolean)) {
+        setError('Los datos usan un máximo de 10 slots por compatibilidad con el flujo actual.')
+        return prev
+      }
+
+      const targetIndex = columnId === 'dataItems'
+        ? currentItems.findIndex((item) => !item)
+        : currentItems.length
+      const nextIndex = targetIndex >= 0 ? targetIndex : currentItems.length
+      const nextItems = [...currentItems]
+      nextItems[nextIndex] = ''
+
+      setActiveStructuredItem({ columnId, index: nextIndex })
+      setError('')
+      setNotice(`${STRUCTURED_ITEM_COLUMNS.find((column) => column.id === columnId)?.label || 'Item'} listo para editar.`)
+      return { ...prev, [columnId]: nextItems }
+    })
+  }
+
+  const removeStructuredItem = (columnId, index) => {
+    setForm((prev) => {
+      const builder = columnId === 'dataItems' ? buildDataItems : buildStructuredItems
+      const currentItems = builder(prev[columnId])
+      if (index < 0 || index >= currentItems.length) return prev
+
+      let nextItems
+      if (columnId === 'dataItems') {
+        nextItems = buildDataItems(currentItems.filter((_, itemIndex) => itemIndex !== index))
+      } else {
+        nextItems = currentItems.filter((_, itemIndex) => itemIndex !== index)
+      }
+
+      const nextIndex = Math.max(0, Math.min(index, nextItems.length - 1))
+      setActiveStructuredItem({ columnId, index: nextIndex })
+      return { ...prev, [columnId]: nextItems }
+    })
+  }
+
+  const moveStructuredItemBetweenColumns = (fromColumnId, index, direction) => {
+    const currentColumnIndex = STRUCTURED_ITEM_COLUMNS.findIndex((column) => column.id === fromColumnId)
+    const targetColumn = STRUCTURED_ITEM_COLUMNS[currentColumnIndex + direction]
+    if (!targetColumn) return
+
+    setForm((prev) => {
+      const sourceBuilder = fromColumnId === 'dataItems' ? buildDataItems : buildStructuredItems
+      const targetBuilder = targetColumn.id === 'dataItems' ? buildDataItems : buildStructuredItems
+      const sourceItems = sourceBuilder(prev[fromColumnId])
+      const targetItems = targetBuilder(prev[targetColumn.id])
+      const itemToMove = sourceItems[index]
+      if (!itemToMove) return prev
+      if (targetColumn.id === 'dataItems' && targetItems.every(Boolean)) {
+        setError('La columna Datos ya está llena. Libera un slot o mueve otro dato primero.')
+        return prev
+      }
+
+      const nextSourceItems = fromColumnId === 'dataItems'
+        ? buildDataItems(sourceItems.filter((_, itemIndex) => itemIndex !== index))
+        : sourceItems.filter((_, itemIndex) => itemIndex !== index)
+      const nextTargetItems = [...targetItems]
+      const targetIndex = targetColumn.id === 'dataItems'
+        ? nextTargetItems.findIndex((entry) => !entry)
+        : nextTargetItems.length
+      const resolvedTargetIndex = targetIndex >= 0 ? targetIndex : nextTargetItems.length
+      nextTargetItems[resolvedTargetIndex] = itemToMove
+
+      setActiveStructuredItem({ columnId: targetColumn.id, index: resolvedTargetIndex })
+      setError('')
+      setNotice(`Item movido a ${targetColumn.label}.`)
+      return {
+        ...prev,
+        [fromColumnId]: nextSourceItems,
+        [targetColumn.id]: targetColumn.id === 'dataItems' ? buildDataItems(nextTargetItems) : nextTargetItems,
+      }
+    })
+  }
+
+  const reorderStructuredItem = (columnId, index, direction) => {
+    setForm((prev) => {
+      const builder = columnId === 'dataItems' ? buildDataItems : buildStructuredItems
+      const currentItems = builder(prev[columnId])
+      const targetIndex = index + direction
+      if (targetIndex < 0 || targetIndex >= currentItems.length) return prev
+
+      const nextItems = [...currentItems]
+      const [item] = nextItems.splice(index, 1)
+      nextItems.splice(targetIndex, 0, item)
+
+      setActiveStructuredItem({ columnId, index: targetIndex })
+      return {
+        ...prev,
+        [columnId]: columnId === 'dataItems' ? buildDataItems(nextItems) : nextItems,
+      }
     })
   }
 
@@ -98,7 +240,7 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
 
       if (form.id === recordId) {
         setForm(toEditorForm(buildEmptyWhiteboardExercise()))
-        setActiveDataIndex(0)
+        setActiveStructuredItem({ columnId: 'dataItems', index: 0 })
       }
 
       setNotice('Exercise deleted.')
@@ -131,6 +273,9 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
         statement: form.statement || '',
         officialResult: form.officialResult || '',
         dataItems: buildDataItems(form.dataItems).filter(Boolean),
+        conditionItems: Array.isArray(form.conditionItems) ? form.conditionItems.filter(Boolean) : [],
+        clarificationItems: Array.isArray(form.clarificationItems) ? form.clarificationItems.filter(Boolean) : [],
+        taskItems: Array.isArray(form.taskItems) ? form.taskItems.filter(Boolean) : [],
         antiproblem: form.antiproblem || '',
       }
 
@@ -209,6 +354,9 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
           statement: normalizeWhiteboardRichField(normalizedItem.statement),
           officialResult: normalizeWhiteboardRichField(normalizedItem.officialResult),
           dataItems: normalizedItem.dataItems,
+          conditionItems: normalizedItem.conditionItems,
+          clarificationItems: normalizedItem.clarificationItems,
+          taskItems: normalizedItem.taskItems,
           antiproblem: normalizeWhiteboardRichField(normalizedItem.antiproblem),
         })
 
@@ -241,21 +389,24 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
     }
   }
 
-  const activeDataValue = buildDataItems(form.dataItems)[activeDataIndex]
+  const activeColumn = STRUCTURED_ITEM_COLUMNS.find((column) => column.id === activeStructuredItem.columnId) || STRUCTURED_ITEM_COLUMNS[0]
+  const activeColumnItems = activeColumn.id === 'dataItems'
+    ? buildDataItems(form[activeColumn.id])
+    : buildStructuredItems(form[activeColumn.id])
+  const activeStructuredValue = activeColumnItems[activeStructuredItem.index] || ''
 
   return (
     <div className="page wb-page">
       <div className="wb-screen-header">
         <div>
-          <h1 className="page-title">Whiteboard Exercise Editor</h1>
-          <div className="saved-empty">Topic and title as the minimum identity, structured source metadata, and rich math content to seed the whiteboard.</div>
-          <div className="saved-empty">Keep every field concise: use the fewest words possible while preserving mathematical clarity.</div>
-          <div className="saved-empty">When importing or drafting content outside the editor, wrap inline math with $...$ so equations render correctly after conversion.</div>
-          <div className="saved-empty">Inside equations, use English math notation for functions and abbreviations: write `sin t` instead of `sen t`.</div>
+          <h1 className="page-title">{screenTitle}</h1>
+          {introLines.map((line) => (
+            <div key={line} className="saved-empty">{line}</div>
+          ))}
         </div>
         <div className="wb-header-actions">
           <button type="button" className="btn" onClick={() => applyRecord(buildEmptyWhiteboardExercise())}>New Draft</button>
-          <button type="button" className="btn" onClick={onBackToWhiteboard}>Back to Module</button>
+          <button type="button" className="btn" onClick={onBackToWhiteboard}>{backLabel}</button>
         </div>
       </div>
 
@@ -326,38 +477,106 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
             />
           </label>
 
-          <div className="saved-title" style={{ marginTop: 8 }}>Exercise Data</div>
-          <div className="saved-empty">Only place facts or data extracted directly from the exercise here: conditions, declared relations, and numeric values literally given.</div>
-          <div className="saved-empty">If the statement includes consignas or inciso prompts, add those requested tasks here as explicit data items too.</div>
-          <div className="saved-empty">Do not include hints, help, reformulations, inferences, or solution steps.</div>
-          <div className="saved-empty">Each item should be one short atomic fact, value, or relation.</div>
-          <div className="saved-empty">Edit one data item at a time and move across the ten available slots.</div>
+          <div className="saved-title" style={{ marginTop: 8 }}>Objetos del Ejercicio</div>
+          <div className="saved-empty">Ahora puedes editar por separado Datos, Condiciones, Aclaraciones y Consignas.</div>
+          <div className="saved-empty">Cada objeto se puede reordenar, mover de columna y eliminar sin salir del editor.</div>
+          <div className="saved-empty">`Datos` mantiene 10 slots para conservar compatibilidad con el flujo actual del whiteboard.</div>
 
-          <div className="wb-data-navigator">
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setActiveDataIndex((prev) => Math.max(0, prev - 1))}
-              disabled={activeDataIndex === 0}
-            >
-              Previous Data
-            </button>
-            <div className="saved-item-tags">Data item {activeDataIndex + 1} of {WHITEBOARD_DATA_SLOTS} | Filled: {populatedDataCount}</div>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => setActiveDataIndex((prev) => Math.min(WHITEBOARD_DATA_SLOTS - 1, prev + 1))}
-              disabled={activeDataIndex === WHITEBOARD_DATA_SLOTS - 1}
-            >
-              Next Data
-            </button>
+          <div className="competitive-grid">
+            {STRUCTURED_ITEM_COLUMNS.map((column, columnIndex) => {
+              const items = column.id === 'dataItems' ? buildDataItems(form[column.id]) : buildStructuredItems(form[column.id])
+              const visibleItems = column.id === 'dataItems'
+                ? items.map((item, index) => ({ value: item, index })).filter((item) => item.value)
+                : items.map((item, index) => ({ value: item, index }))
+
+              return (
+                <div key={column.id} className="field">
+                  <div className="saved-title">{column.label}</div>
+                  <div className="saved-empty">{column.helper}</div>
+                  <div className="saved-item-tags">
+                    {column.id === 'dataItems'
+                      ? `Llenos: ${populatedDataCount} de ${WHITEBOARD_DATA_SLOTS}`
+                      : `Items: ${visibleItems.length}`}
+                  </div>
+                  <div className="menu-actions wb-inline-actions">
+                    <button type="button" className="btn" onClick={() => addStructuredItem(column.id)}>
+                      Add {column.label.slice(0, -1) || 'Item'}
+                    </button>
+                  </div>
+
+                  {visibleItems.length === 0 ? (
+                    <div className="saved-empty">No hay elementos en esta columna todavía.</div>
+                  ) : (
+                    <div className="saved-list">
+                      {visibleItems.map((item, visibleIndex) => {
+                        const isActive = activeStructuredItem.columnId === column.id && activeStructuredItem.index === item.index
+                        return (
+                          <div key={`${column.id}-${item.index}`} className="saved-item">
+                            <button
+                              type="button"
+                              className="wb-record-open"
+                              onClick={() => setActiveStructuredItem({ columnId: column.id, index: item.index })}
+                            >
+                              <div className="saved-item-title">{`${column.label.slice(0, -1) || 'Item'} ${visibleIndex + 1}`}</div>
+                              <div className="saved-item-tags">{isActive ? 'Editing now' : 'Click to edit'}</div>
+                            </button>
+                            <div className="menu-actions wb-inline-actions">
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => reorderStructuredItem(column.id, item.index, -1)}
+                                disabled={item.index === 0}
+                              >
+                                Up
+                              </button>
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => reorderStructuredItem(column.id, item.index, 1)}
+                                disabled={item.index >= items.length - 1}
+                              >
+                                Down
+                              </button>
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => moveStructuredItemBetweenColumns(column.id, item.index, -1)}
+                                disabled={columnIndex === 0}
+                              >
+                                Left
+                              </button>
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={() => moveStructuredItemBetweenColumns(column.id, item.index, 1)}
+                                disabled={columnIndex === STRUCTURED_ITEM_COLUMNS.length - 1}
+                              >
+                                Right
+                              </button>
+                              <button
+                                type="button"
+                                className="btn danger"
+                                onClick={() => removeStructuredItem(column.id, item.index)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           <label className="field">
-            <span>{`Data Item ${activeDataIndex + 1}`}</span>
+            <span>{`${activeColumn.label} | Item ${activeStructuredItem.index + 1}`}</span>
+            <div className="saved-empty">Editor del elemento seleccionado.</div>
             <DescriptionEditor
-              value={activeDataValue}
-              onChange={(value) => updateDataItem(activeDataIndex, value)}
+              value={activeStructuredValue}
+              onChange={(value) => updateStructuredItem(activeColumn.id, activeStructuredItem.index, value)}
               baseFontFamily={EDITOR_FONT_FAMILY}
               baseFontSize={18}
             />
@@ -384,8 +603,8 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
 
         <div className="panel wb-panel">
           <div className="saved-title">Saved Exercises</div>
-          <div className="saved-empty">The canonical template uses the `exercises` array and the fields `topic`, `title`, `statement`, `officialResult`, `dataItems`, and `antiproblem`.</div>
-          <div className="saved-empty">The importer also tolerates reasonable aliases such as `tema`, `titulo`, `enunciado`, `respuestaOficial`, `datos`, and `antiproblema`, as long as the content is equivalent.</div>
+          <div className="saved-empty">The canonical template now uses `dataItems`, `conditionItems`, `clarificationItems`, and `taskItems` as separate arrays, plus `statement`, `officialResult`, and `antiproblem`.</div>
+          <div className="saved-empty">The importer still tolerates aliases such as `tema`, `titulo`, `enunciado`, `datos`, `condiciones`, `aclaraciones`, `consignas`, and `antiproblema`.</div>
           <div className="saved-empty">For plain-text JSON imports, use inline LaTeX between $...$ instead of leaving mathematical expressions as ambiguous text.</div>
           <div className="saved-item-actions">
             <button type="button" className="btn" onClick={exportCurrentExercise}>
@@ -419,7 +638,7 @@ export default function WhiteboardExerciseEditor({ onBackToWhiteboard, session }
                     <div className="saved-item-title">{record.title || 'Untitled exercise'}</div>
                     <div className="saved-item-meta">{record.topic || 'No topic'}</div>
                     <div className="saved-item-tags">
-                      Data items: {record.dataItems?.length || 0} | {record.statement ? 'With statement' : 'No statement'} | {record.officialResult ? 'With answer' : 'No answer'}
+                      Datos: {record.dataItems?.length || 0} | Condiciones: {record.conditionItems?.length || 0} | Aclaraciones: {record.clarificationItems?.length || 0} | Consignas: {record.taskItems?.length || 0}
                     </div>
                   </button>
                   <div className="menu-actions wb-inline-actions">

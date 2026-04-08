@@ -4,8 +4,11 @@ import { COMPETITIVE_SECTIONS } from './components/competitiveSections'
 
 const WhiteboardModeHub = lazy(() => import('./WhiteboardModeHub'))
 const WhiteboardExerciseEditor = lazy(() => import('./WhiteboardExerciseEditor'))
+const WhiteboardNotebook = lazy(() => import('./WhiteboardNotebook'))
 const WhiteboardWorkspace = lazy(() => import('./WhiteboardWorkspace'))
+const NotebookLibraryHub = lazy(() => import('./NotebookLibraryHub'))
 const MathDungeonsHub = lazy(() => import('./MathDungeonsHub'))
+const MathDungeonsRun = lazy(() => import('./MathDungeonsRun'))
 
 const CompetitiveExerciseEditor = lazy(() => import('./CompetitiveExerciseEditor'))
 const CompetitiveReviewPanel = lazy(() => import('./CompetitiveReviewPanel'))
@@ -38,10 +41,12 @@ function withSuspense(node) {
 }
 
 export default function AppWorkspaceRouter({
+  activeMathDungeonRunId,
   activeMultiplayerMatchId,
   onLogout,
   renderCardWorkspace,
   session,
+  setActiveMathDungeonRunId,
   setActiveMultiplayerMatchId,
   setWorkspaceTarget,
   workspaceTarget,
@@ -52,6 +57,7 @@ export default function AppWorkspaceRouter({
           session={session}
           onOpenCreative={() => setWorkspaceTarget('creative')}
           onOpenCompetitive={() => setWorkspaceTarget('competitive')}
+          onOpenNotebooks={() => setWorkspaceTarget('notebooks')}
           onOpenMathDungeons={() => setWorkspaceTarget('math-dungeons')}
           onOpenWhiteboard={() => setWorkspaceTarget('whiteboard')}
           onOpenMultiplayer={() => setWorkspaceTarget('multiplayer')}
@@ -113,6 +119,21 @@ export default function AppWorkspaceRouter({
       <MathDungeonsHub
         session={session}
         onBackToMenu={() => setWorkspaceTarget(null)}
+        onOpenRun={(runId) => {
+          setActiveMathDungeonRunId(runId)
+          setWorkspaceTarget('math-dungeons-run')
+        }}
+        onLogout={onLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'math-dungeons-run') {
+    return withSuspense(
+      <MathDungeonsRun
+        session={session}
+        runId={activeMathDungeonRunId}
+        onBackToHub={() => setWorkspaceTarget('math-dungeons')}
         onLogout={onLogout}
       />
     )
@@ -308,6 +329,39 @@ export default function AppWorkspaceRouter({
     )
   }
 
+  if (workspaceTarget === 'whiteboard-notebook') {
+    return withSuspense(
+      <NotebookLibraryHub
+        session={session}
+        onBackToMenu={() => setWorkspaceTarget(null)}
+        onOpenNotebookPage={() => setWorkspaceTarget('notebooks-editor')}
+        onLogout={onLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'notebooks') {
+    return withSuspense(
+      <NotebookLibraryHub
+        session={session}
+        onBackToMenu={() => setWorkspaceTarget(null)}
+        onOpenNotebookPage={() => setWorkspaceTarget('notebooks-editor')}
+        onLogout={onLogout}
+      />
+    )
+  }
+
+  if (workspaceTarget === 'notebooks-editor') {
+    return withSuspense(
+      <WhiteboardNotebook
+        session={session}
+        syncMode="notebook-page"
+        allowExercisePicker={false}
+        onBackToWhiteboard={() => setWorkspaceTarget('notebooks')}
+      />
+    )
+  }
+
   if (workspaceTarget.startsWith('competitive')) {
     const activeSectionId = workspaceTarget === 'competitive' ? COMPETITIVE_SECTIONS[0].id : workspaceTarget
 
@@ -339,6 +393,7 @@ export default function AppWorkspaceRouter({
       session={session}
       onOpenCreative={() => setWorkspaceTarget('creative')}
       onOpenCompetitive={() => setWorkspaceTarget('competitive')}
+      onOpenNotebooks={() => setWorkspaceTarget('notebooks')}
       onOpenMathDungeons={() => setWorkspaceTarget('math-dungeons')}
       onOpenWhiteboard={() => setWorkspaceTarget('whiteboard')}
       onOpenMultiplayer={() => setWorkspaceTarget('multiplayer')}

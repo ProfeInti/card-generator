@@ -1,4 +1,5 @@
 import katex from 'katex'
+import { buildSketchSvgDataUrl, deserializeSketchDocument } from './editableSketch'
 
 export function renderMathInHtml(html) {
   const raw = typeof html === 'string' ? html : ''
@@ -16,6 +17,19 @@ export function renderMathInHtml(html) {
     } catch {
       el.textContent = latex
     }
+  })
+
+  const sketchNodes = doc.querySelectorAll('div[data-type="editable-sketch"]')
+  sketchNodes.forEach((el) => {
+    const sketch = el.getAttribute('data-sketch') || ''
+    const width = Number(el.getAttribute('data-width') || 360)
+    const documentModel = deserializeSketchDocument(sketch)
+    const img = doc.createElement('img')
+    img.setAttribute('src', buildSketchSvgDataUrl(documentModel))
+    img.setAttribute('alt', 'Editable sketch')
+    img.setAttribute('style', `width:${Number.isFinite(width) ? width : 360}px;height:auto;display:block;max-width:100%;background:#ffffff;border:1px solid #2a2a2a;border-radius:10px;`)
+    el.innerHTML = ''
+    el.appendChild(img)
   })
 
   return doc.body.innerHTML
@@ -40,12 +54,12 @@ export function hasMeaningfulHtmlContent(html) {
   if (extractTextFromHtml(raw)) return true
 
   if (typeof window === 'undefined') {
-    return /<(img|table)\b|data-type="math-inline"/i.test(raw)
+    return /<(img|table)\b|data-type="math-inline"|data-type="editable-sketch"/i.test(raw)
   }
 
   const parser = new window.DOMParser()
   const doc = parser.parseFromString(raw, 'text/html')
-  return Boolean(doc.body.querySelector('img, table, [data-type="math-inline"]'))
+  return Boolean(doc.body.querySelector('img, table, [data-type="math-inline"], [data-type="editable-sketch"]'))
 }
 
 export function isLikelyHtml(value) {

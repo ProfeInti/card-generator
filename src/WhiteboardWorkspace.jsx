@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DescriptionEditor from './DescriptionEditor'
 import { downloadJsonFile, parseJsonFile } from './lib/competitiveJson'
-import { supabase } from './lib/supabase'
 import { listPrivateCompetitiveTechniqueInventory } from './data/competitiveTechniquesRepo'
 import {
   cloneWhiteboardWorkspace,
@@ -9,6 +8,7 @@ import {
   getWhiteboardWorkspaceById,
   updateWhiteboardWorkspace,
 } from './data/whiteboardWorkspaceRepo'
+import { subscribeToWhiteboardWorkspace } from './data/whiteboardWorkspaceRealtime'
 import {
   WHITEBOARD_NODE_TYPES,
   buildEmptyWhiteboardExercise,
@@ -103,10 +103,6 @@ function buildPresencePayload({
     activity,
     updatedAt: new Date().toISOString(),
   }
-}
-
-function flattenPresenceState(state) {
-  return Object.values(state || {}).flatMap((entries) => (Array.isArray(entries) ? entries : [])).filter(Boolean)
 }
 
 function getNodeBounds(node, allNodes) {
@@ -1028,7 +1024,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     setActiveWhiteboardExerciseId(nextExercise.id || remoteWorkspace.exercise_local_id || '')
     setLoadedWorkspace(remoteWorkspace)
     applyBoardState(nextExercise, boardState.nodes, boardState.links, remoteWorkspace.id)
-    setCollaborationStatus('Whiteboard synced with Supabase.')
+    setCollaborationStatus('Whiteboard synced with the local collaboration server.')
     setCollaborationError('')
   }
 
@@ -1053,7 +1049,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     setActiveWhiteboardExerciseId(nextExercise.id)
     setLoadedWorkspace(remoteWorkspace)
     applyBoardState(nextExercise, remoteBoardState.nodes, remoteBoardState.links, remoteWorkspace.id)
-    setCollaborationStatus('Collaborative whiteboard active in Supabase.')
+    setCollaborationStatus('Collaborative whiteboard active in the local collaboration server.')
     setCollaborationError('')
   }
 
@@ -1269,92 +1265,101 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
       return undefined
     }
 
-    const refreshFromRealtime = async () => {
+    let cancelled = false
+    let subscription = null
+
+    const connectRealtime = async () => {
       try {
-        const remoteWorkspace = await getWhiteboardWorkspaceById(workspaceId)
-        if (!remoteWorkspace) return
+        subscription = await subscribeToWhiteboardWorkspace(workspaceId, {
+          clientId: realtimeClientIdRef.current,
+          presence: buildPresencePayload({
+            session,
+            editorState: editorStateRef.current,
+            dragState: dragStateRef.current,
+            selectedNodeId: selectedNodeIdRef.current,
+            selectedLinkId: selectedLinkIdRef.current,
+            linkForm: linkFormRef.current,
+            clientId: realtimeClientIdRef.current,
+          }),
+          onSnapshot: (remoteWorkspace, payload) => {
+            if (cancelled || !remoteWorkspace) return
 
-        const snapshot = remoteWorkspace.exercise_snapshot && typeof remoteWorkspace.exercise_snapshot === 'object'
-          ? remoteWorkspace.exercise_snapshot
-          : selectedExerciseRef.current
-        if (!snapshot) return
+            const snapshot = remoteWorkspace.exercise_snapshot && typeof remoteWorkspace.exercise_snapshot === 'object'
+              ? remoteWorkspace.exercise_snapshot
+              : selectedExerciseRef.current
+            if (!snapshot) return
 
-        const boardState = resolveBoardState(snapshot, remoteWorkspace)
-        const nextSignature = serializeBoard(boardState.nodes, boardState.links)
-        if (nextSignature === currentBoardSignatureRef.current) return
+            const boardState = resolveBoardState(snapshot, remoteWorkspace)
+            const nextSignature = serializeBoard(boardState.nodes, boardState.links)
+            if (payload?.sourceClientId && payload.sourceClientId === realtimeClientIdRef.current) return
+            if (nextSignature === currentBoardSignatureRef.current) return
 
-        saveWorkspace(snapshot.id || remoteWorkspace.exercise_local_id, boardState)
-        applyRemoteRealtimeBoardState(boardState.nodes, boardState.links, {
-          exercise: snapshot,
-          workspaceId: remoteWorkspace.id,
-          workspaceRow: remoteWorkspace,
-          lastEditorUserId: remoteWorkspace.last_editor_user_id || '',
+            saveWorkspace(snapshot.id || remoteWorkspace.exercise_local_id, boardState)
+            applyRemoteRealtimeBoardState(boardState.nodes, boardState.links, {
+              exercise: snapshot,
+              workspaceId: remoteWorkspace.id,
+              workspaceRow: remoteWorkspace,
+              lastEditorUserId: remoteWorkspace.last_editor_user_id || '',
+            })
+            setCollaborationStatus('Collaborative changes received in real time.')
+            setCollaborationError('')
+          },
+          onPresence: (nextCollaborators) => {
+            if (cancelled) return
+            setCollaborators(Array.isArray(nextCollaborators) ? nextCollaborators : [])
+          },
+          onBoardSync: (payload) => {
+            if (cancelled || !payload || payload.sourceClientId === realtimeClientIdRef.current) return
+
+            const nextNodes = Array.isArray(payload?.nodes) ? payload.nodes : []
+            const nextLinks = Array.isArray(payload?.links) ? payload.links : []
+            const nextSignature = serializeBoard(nextNodes, nextLinks)
+            if (nextSignature === currentBoardSignatureRef.current) return
+
+            const nextExercise = payload.exerciseSnapshot && typeof payload.exerciseSnapshot === 'object'
+              ? payload.exerciseSnapshot
+              : selectedExerciseRef.current
+
+            if (nextExercise?.id) {
+              saveWorkspace(nextExercise.id, { nodes: nextNodes, links: nextLinks })
+            }
+
+            applyRemoteRealtimeBoardState(nextNodes, nextLinks, {
+              exercise: nextExercise,
+              workspaceId,
+              lastEditorUserId: payload.userId || '',
+            })
+            setCollaborationStatus(`Live update received from ${payload.username || 'another collaborator'}.`)
+            setCollaborationError('')
+          },
+          onError: (error) => {
+            if (cancelled) return
+            setCollaborationError(error?.message || 'Could not refresh the collaborative whiteboard.')
+          },
         })
-        setCollaborationStatus('Collaborative changes received in real time.')
-        setCollaborationError('')
+
+        if (cancelled) {
+          subscription?.close?.()
+          return
+        }
+
+        realtimeChannelRef.current = subscription
+        publishPresence()
       } catch (error) {
-        setCollaborationError(error?.message || 'Could not refresh the collaborative whiteboard.')
+        if (cancelled) return
+        setCollaborationError(error?.message || 'Could not connect the collaborative whiteboard.')
       }
     }
 
-    const channel = supabase
-      .channel(`wb-workspace-${workspaceId}`, {
-        config: {
-          presence: {
-            key: `${session.userId}:${realtimeClientIdRef.current}`,
-          },
-          broadcast: {
-            self: false,
-          },
-        },
-      })
-      .on('presence', { event: 'sync' }, () => {
-        setCollaborators(flattenPresenceState(channel.presenceState()))
-      })
-      .on('broadcast', { event: 'board-sync' }, ({ payload }) => {
-        const nextNodes = Array.isArray(payload?.nodes) ? payload.nodes : []
-        const nextLinks = Array.isArray(payload?.links) ? payload.links : []
-        const nextSignature = serializeBoard(nextNodes, nextLinks)
-
-        if (!payload || payload.clientId === realtimeClientIdRef.current) return
-        if (nextSignature === currentBoardSignatureRef.current) return
-
-        const nextExercise = payload.exerciseSnapshot && typeof payload.exerciseSnapshot === 'object'
-          ? payload.exerciseSnapshot
-          : selectedExerciseRef.current
-
-        if (nextExercise?.id) {
-          saveWorkspace(nextExercise.id, { nodes: nextNodes, links: nextLinks })
-        }
-
-        applyRemoteRealtimeBoardState(nextNodes, nextLinks, {
-          exercise: nextExercise,
-          workspaceId,
-          lastEditorUserId: payload.userId || '',
-        })
-        setCollaborationStatus(`Live update received from ${payload.username || 'another collaborator'}.`)
-        setCollaborationError('')
-      })
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'whiteboard_workspaces', filter: `id=eq.${workspaceId}` },
-        refreshFromRealtime
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          realtimeChannelRef.current = channel
-          publishPresence()
-        }
-      })
-
-    realtimeChannelRef.current = channel
+    connectRealtime()
 
     return () => {
-      if (realtimeChannelRef.current === channel) {
+      cancelled = true
+      if (realtimeChannelRef.current === subscription) {
         realtimeChannelRef.current = null
       }
       setCollaborators([])
-      supabase.removeChannel(channel)
+      subscription?.close?.()
     }
   }, [workspaceId, session, applyRemoteRealtimeBoardState, publishPresence])
 
@@ -1411,23 +1416,18 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     if (nextSignature === lastBroadcastSignatureRef.current) return undefined
 
     const timerId = window.setTimeout(async () => {
-      const channel = realtimeChannelRef.current
-      if (!channel) return
+      const subscription = realtimeChannelRef.current
+      if (!subscription?.sendBoardSync) return
 
       try {
-        await channel.send({
-          type: 'broadcast',
-          event: 'board-sync',
-          payload: {
-            clientId: realtimeClientIdRef.current,
-            userId: session.userId,
-            username: session.username || session.userId,
-            workspaceId,
-            exerciseSnapshot: selectedExercise,
-            nodes,
-            links,
-            sentAt: new Date().toISOString(),
-          },
+        await subscription.sendBoardSync({
+          clientId: realtimeClientIdRef.current,
+          userId: session.userId,
+          username: session.username || session.userId,
+          workspaceId,
+          exerciseSnapshot: selectedExercise,
+          nodes,
+          links,
         })
         lastBroadcastSignatureRef.current = nextSignature
       } catch (error) {
@@ -1454,6 +1454,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
     const timerId = window.setTimeout(async () => {
       try {
         const updatedWorkspace = await updateWhiteboardWorkspace(workspaceId, session.userId, {
+          clientId: realtimeClientIdRef.current,
           exerciseTitle: selectedExercise.title || 'Math Whiteboard',
           exerciseSnapshot: selectedExercise,
           nodes,
@@ -1463,7 +1464,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
         })
         setLoadedWorkspace(updatedWorkspace)
         remoteAppliedSignatureRef.current = nextSignature
-        setCollaborationStatus('Changes synced to Supabase.')
+        setCollaborationStatus('Changes synced to the local collaboration server.')
         setCollaborationError('')
       } catch (error) {
         setCollaborationError(error?.message || 'No se pudieron guardar los cambios colaborativos.')
@@ -1804,6 +1805,7 @@ export default function WhiteboardWorkspace({ onBackToWhiteboard, session }) {
 
     try {
       const updatedWorkspace = await updateWhiteboardWorkspace(workspaceId, session.userId, {
+        clientId: realtimeClientIdRef.current,
         exerciseTitle: selectedExercise?.title || loadedWorkspace.exercise_title || 'Math Whiteboard',
         exerciseSnapshot: selectedExercise || loadedWorkspace.exercise_snapshot || null,
         nodes,

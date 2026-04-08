@@ -1,0 +1,76 @@
+{
+  "format": "inticore-math-dungeons-v1",
+  "entity": "math_dungeon_challenges",
+  "version": 1,
+  "challenges": [
+    {
+      "id": "challenge-factoring-1",
+      "title": "Lectern of Hidden Factors",
+      "type": "riddle",
+      "mathTopic": "Factoring quadratics",
+      "exercisePrompt": "Factoriza la expresion $x^2+5x+6$.",
+      "interactionPrompt": "Conectas con la esencia matematica del lectern y sientes que la estructura del polinomio quiere revelarse. Que paso exacto deberias ejecutar?",
+      "officialAnswer": "$(x+2)(x+3)$",
+      "mathFacts": [
+        "La expresion dada es $x^2+5x+6$.",
+        "Se pide factorizar la expresion.",
+        "El coeficiente principal es $1$.",
+        "Se buscan dos numeros cuya suma sea $5$.",
+        "Se buscan dos numeros cuyo producto sea $6$."
+      ],
+      "hintSteps": [
+        "Busca dos numeros que al multiplicarse den $6$ y al sumarse den $5$.",
+        "Escribe la expresion como un producto de dos binomios con termino inicial $x$.",
+        "Verifica que los terminos constantes reproduzcan la suma y el producto pedidos."
+      ],
+      "relatedQuestions": [],
+      "enemyProfile": {
+        "name": "",
+        "attackFlavor": ""
+      },
+      "successOutcome": "The lectern opens and releases a focus tonic.",
+      "failureOutcome": "The lectern seals itself for the moment and drains the student's confidence."
+    },
+    {
+      "id": "challenge-derivative-1",
+      "title": "Derivative Sentinel",
+      "type": "enemy",
+      "mathTopic": "Derivatives",
+      "exercisePrompt": "Encuentra la derivada de $f(x)=x^3\\sin(x)$.",
+      "interactionPrompt": "Conectas con la esencia matematica del centinela y sientes el desafio vibrando en su armadura. Que paso exacto deberias ejecutar?",
+      "officialAnswer": "$f'(x)=3x^2\\sin(x)+x^3\\cos(x)$",
+      "mathFacts": [
+        "La funcion dada es $f(x)=x^3\\sin(x)$.",
+        "Se pide derivar la funcion.",
+        "La expresion es un producto entre $x^3$ y $\\sin(x)$.",
+        "La derivada de $x^3$ es $3x^2$.",
+        "La derivada de $\\sin(x)$ es $\\cos(x)$."
+      ],
+      "hintSteps": [
+        "Identifica primero que regla conecta dos factores multiplicados.",
+        "Deriva cada factor por separado antes de recomponer la expresion.",
+        "Escribe la suma de dos productos resultante de la regla del producto."
+      ],
+      "relatedQuestions": [
+        {
+          "prompt": "El centinela pregunta: cual es la derivada de $\\sin(x)$?",
+          "expectedAnswer": "$\\cos(x)$",
+          "mitigation": "Evitas todo el dano de este turno.",
+          "penalty": "Recibes el dano completo del ataque."
+        },
+        {
+          "prompt": "El centinela pregunta: cual es la derivada de $x^3$?",
+          "expectedAnswer": "$3x^2$",
+          "mitigation": "Reducas el dano del ataque a la mitad.",
+          "penalty": "El ataque del centinela impacta sin mitigacion."
+        }
+      ],
+      "enemyProfile": {
+        "name": "Sentinel of Falling Tangents",
+        "attackFlavor": "Launches a stone blade unless the student answers a derivative reflex question."
+      },
+      "successOutcome": "The sentinel cracks and the northern gate opens.",
+      "failureOutcome": "The sentinel lands a hit and the player loses health."
+    }
+  ]
+}

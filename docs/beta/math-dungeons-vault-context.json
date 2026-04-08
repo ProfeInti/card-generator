@@ -1,0 +1,85 @@
+{
+  "dungeonId": "vault-of-broken-signs-beta",
+  "title": "Vault of Broken Signs",
+  "setting": "Ancient underground calculus temple beneath the academy.",
+  "tone": "Mysterious, tense, scholarly, and immersive.",
+  "startingRoomId": "entrance",
+  "rooms": [
+    {
+      "id": "entrance",
+      "name": "Atrium of Echoing Symbols",
+      "description": "A cold chamber with floating inscriptions, fractured stone mirrors, and three passages that pulse when mathematical intent is spoken aloud.",
+      "exits": [
+        "archive-of-factors",
+        "guardian-gate"
+      ],
+      "challengeId": null,
+      "loot": [
+        {
+          "rewardId": "rusted-key",
+          "visibility": "hidden",
+          "condition": "inspect-mirror-plinth"
+        }
+      ],
+      "interactions": [
+        {
+          "id": "inspect-mirror-plinth",
+          "label": "Inspect the cracked mirror plinth",
+          "outcome": "Reveals the hidden rusted key beneath the stone base."
+        }
+      ]
+    },
+    {
+      "id": "archive-of-factors",
+      "name": "Archive of Factors",
+      "description": "Shelves of stone tablets line the walls. A sealed lectern glows with a polynomial challenge and will not open until the exact factor structure is understood.",
+      "exits": [
+        "entrance",
+        "bridge-of-series"
+      ],
+      "challengeId": "challenge-factoring-1",
+      "challengeMode": "riddle",
+      "loot": [
+        {
+          "rewardId": "focus-tonic",
+          "visibility": "hidden",
+          "condition": "clear-challenge-factoring-1"
+        }
+      ]
+    },
+    {
+      "id": "guardian-gate",
+      "name": "Gate of the Derivative Sentinel",
+      "description": "A stone guardian blocks the northern arch. Its armor is carved with product rules and trigonometric marks that flare whenever a student hesitates.",
+      "exits": [
+        "entrance",
+        "bridge-of-series"
+      ],
+      "challengeId": "challenge-derivative-1",
+      "challengeMode": "enemy",
+      "loot": []
+    },
+    {
+      "id": "bridge-of-series",
+      "name": "Bridge of Quiet Series",
+      "description": "A narrow bridge crosses a luminous abyss. The far door bears a circular seal that reacts to both the cleared lectern and the fallen sentinel.",
+      "exits": [
+        "archive-of-factors",
+        "guardian-gate",
+        "observatory-door"
+      ],
+      "challengeId": null,
+      "loot": []
+    },
+    {
+      "id": "observatory-door",
+      "name": "Observatory Door",
+      "description": "A bronze observatory door engraved with faded trigonometric markings. It will open only if the student has obtained the rusted key and crossed the prior trials.",
+      "exits": [
+        "bridge-of-series"
+      ],
+      "challengeId": null,
+      "loot": []
+    }
+  ]
+}

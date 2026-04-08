@@ -34,8 +34,8 @@ const STATUS_OPTIONS = ['draft', 'proposed', 'approved', 'rejected']
 const STUDENT_STATUS_OPTIONS = ['draft', 'proposed']
 
 const EMPTY_TRANSLATIONS = {
-  es: { name: '', effectDescription: '', workedExample: '' },
-  fr: { name: '', effectDescription: '', workedExample: '' },
+  es: { name: '', effectDescription: '', workedExample: '', applicationStructure: '' },
+  fr: { name: '', effectDescription: '', workedExample: '', applicationStructure: '' },
 }
 
 function toInputValue(value) {
@@ -78,11 +78,13 @@ function toFormState(row, role) {
         name: toInputValue(row.name),
         effectDescription: normalizeMathHtmlInput(row.effect_description),
         workedExample: normalizeMathHtmlInput(row.worked_example),
+        applicationStructure: normalizeMathHtmlInput(row.application_structure || row.worked_example || ''),
       },
       fr: {
         name: toInputValue(row.name_fr),
         effectDescription: normalizeMathHtmlInput(row.effect_description_fr),
         workedExample: normalizeMathHtmlInput(row.worked_example_fr),
+        applicationStructure: normalizeMathHtmlInput(row.application_structure_fr || row.application_structure || row.worked_example_fr || row.worked_example || ''),
       },
     },
   }
@@ -117,6 +119,8 @@ function toPayload(form, userId, role) {
     effect_description_fr: String(french.effectDescription || '').trim() || null,
     worked_example: String(spanish.workedExample || '').trim() || null,
     worked_example_fr: String(french.workedExample || '').trim() || null,
+    application_structure: String(spanish.applicationStructure || '').trim() || null,
+    application_structure_fr: String(french.applicationStructure || '').trim() || null,
   }
 }
 
@@ -158,6 +162,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     return Boolean(
       String(spanish.name || '').trim()
       && hasMeaningfulHtmlContent(spanish.effectDescription)
+      && hasMeaningfulHtmlContent(spanish.applicationStructure)
       && String(form.topicId || '').trim()
       && String(form.subtopicId || '').trim()
       && String(form.effectTypeId || '').trim()
@@ -317,9 +322,11 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
         effectDescriptionFr: form.translations?.fr?.effectDescription || '',
         workedExample: form.translations?.es?.workedExample || '',
         workedExampleFr: form.translations?.fr?.workedExample || '',
+        applicationStructure: form.translations?.es?.applicationStructure || '',
+        applicationStructureFr: form.translations?.fr?.applicationStructure || '',
       }
 
-      if (!String(item.name || '').trim() || !hasMeaningfulHtmlContent(item.effectDescription)) {
+      if (!String(item.name || '').trim() || !hasMeaningfulHtmlContent(item.effectDescription) || !hasMeaningfulHtmlContent(item.applicationStructure)) {
         throw new Error('The loaded proposal is not valid for export yet.')
       }
 
@@ -389,6 +396,8 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
           effect_description_fr: normalizeCompetitiveRichField(item?.effectDescriptionFr) || null,
           worked_example: normalizeCompetitiveRichField(item?.workedExample) || null,
           worked_example_fr: normalizeCompetitiveRichField(item?.workedExampleFr) || null,
+          application_structure: normalizeCompetitiveRichField(item?.applicationStructure) || null,
+          application_structure_fr: normalizeCompetitiveRichField(item?.applicationStructureFr) || null,
           reviewed_by: role === 'teacher' && (importedStatus === 'approved' || importedStatus === 'rejected') ? session.userId : null,
           approved_at: role === 'teacher' && importedStatus === 'approved' ? new Date().toISOString() : null,
         }
@@ -397,6 +406,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
         if (
           !payload.name
           || !hasMeaningfulHtmlContent(payload.effect_description)
+          || !hasMeaningfulHtmlContent(payload.application_structure)
           || !payload.topic
           || !payload.topic_fr
           || !payload.subtopic
@@ -486,6 +496,7 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
 
       if (!payload.name) throw new Error('Spanish technique name is required.')
       if (!hasMeaningfulHtmlContent(payload.effect_description)) throw new Error('Spanish effect description is required.')
+      if (!hasMeaningfulHtmlContent(payload.application_structure)) throw new Error('Spanish application structure is required.')
       if (!payload.topic || !payload.topic_fr || !payload.subtopic || !payload.subtopic_fr || !payload.effect_type || !payload.effect_type_fr) {
         throw new Error('Topic, subtopic, and effect type are required in both Spanish and French.')
       }
@@ -715,6 +726,10 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
               <div className="saved-empty">Entity type: competitive_technique_proposals</div>
               <div className="saved-empty">Spanish and French fields are both required for the technique taxonomy and the main localized content.</div>
               <div className="saved-empty">A technique should describe a reusable mathematical method, criterion, transformation, or operation.</div>
+              <div className="saved-empty">La estructura de aplicacion es la frase o mini-plantilla que el notebook insertara al hacer clic derecho y aplicar la tecnica.</div>
+              <div className="saved-empty">Piensa esa estructura como redaccion escolar reusable: breve, clara y preparada para citar referencias como [D1], [Q1] o placeholders como (referencia).</div>
+              <div className="saved-empty">Las tecnicas estan pensadas para escolares: usa lenguaje claro, matematica escolar y ejemplos accesibles, evitando formulaciones innecesariamente avanzadas o rebuscadas.</div>
+              <div className="saved-empty">Si una tecnica usa ecuaciones en su descripcion, ejemplo o estructura de aplicacion, envuelvelas con HTML del editor o con $...$ para que el import las convierta bien.</div>
               <div className="saved-empty">Topics canonicos: {taxonomyNotes.topics}</div>
               <div className="saved-empty">Effect types canonicos: {taxonomyNotes.effectTypes}</div>
 
@@ -801,6 +816,17 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
                 />
               </label>
 
+              <label className="field">
+                <span>Application structure {activeLanguage === 'es' ? '*' : ''}</span>
+                <DescriptionEditor
+                  value={activeTranslation.applicationStructure}
+                  onChange={(value) => onTranslationChange(activeLanguage, 'applicationStructure', value)}
+                  baseFontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace'}
+                  baseFontSize={18}
+                />
+              </label>
+              <div className="saved-empty">Ejemplo: Reemplazando (referencia) en (referencia), por consiguiente ... / En remplacant (reference) dans (reference), par consequent ...</div>
+
               {error && <div className="auth-error">{error}</div>}
               {!error && notice && <div className="saved-empty">{notice}</div>}
 
@@ -829,3 +855,4 @@ export default function CompetitiveTechniqueEditor({ session, onBackToCompetitiv
     </div>
   )
 }
+

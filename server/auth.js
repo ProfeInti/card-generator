@@ -6,9 +6,22 @@ function getJwtSecret() {
 }
 
 export function signUserToken(user) {
-  return jwt.sign({ id: user.id, username: user.username }, getJwtSecret(), {
-    expiresIn: '30d',
-  })
+  return jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role === 'teacher' ? 'teacher' : 'student',
+    },
+    getJwtSecret(),
+    {
+      expiresIn: '30d',
+    },
+  )
+}
+
+export function verifyUserToken(token) {
+  return jwt.verify(token, getJwtSecret())
 }
 
 export function requireAuth(req, res, next) {
@@ -20,8 +33,13 @@ export function requireAuth(req, res, next) {
   }
 
   try {
-    const payload = jwt.verify(token, getJwtSecret())
-    req.user = { id: payload.id, username: payload.username }
+    const payload = verifyUserToken(token)
+    req.user = {
+      id: payload.id,
+      email: payload.email,
+      username: payload.username,
+      role: payload.role === 'teacher' ? 'teacher' : 'student',
+    }
     return next()
   } catch {
     return res.status(401).json({ error: 'Unauthorized' })

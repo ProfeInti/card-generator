@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createMultiplayerRoom,
   deleteMultiplayerRoom,
@@ -8,6 +8,7 @@ import {
   listMatchesByRoomIds,
   listRoomPlayersByRoomIds,
   listVisibleMultiplayerRooms,
+  MULTIPLAYER_DISABLED_MESSAGE,
   setMultiplayerRoomReady,
   startMatchForRoom,
 } from './data/multiplayerLobbyRepo'
@@ -34,7 +35,7 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenDeckBuil
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
-  const loadLobby = async () => {
+  const loadLobby = useCallback(async () => {
     setLoading(true)
     setError('')
 
@@ -80,11 +81,11 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenDeckBuil
     } finally {
       setLoading(false)
     }
-  }
+  }, [session.userId])
 
   useEffect(() => {
     loadLobby()
-  }, [session.userId])
+  }, [loadLobby])
 
   const roomCards = useMemo(() => {
     return rooms.map((room) => {
@@ -280,6 +281,7 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenDeckBuil
       <div className="competitive-layout">
         <div className="panel">
           <div className="saved-title">Create Room</div>
+          <div className="auth-error">{MULTIPLAYER_DISABLED_MESSAGE}</div>
           <div className="saved-empty">Phase 2: rooms can now initialize match snapshots from approved constructs.</div>
           <div className="saved-empty">A player stays in an open room only while remaining inside the multiplayer menu.</div>
           <div className="saved-empty">A match can start only when both players confirm they are ready.</div>
@@ -298,7 +300,7 @@ export default function MultiplayerLobby({ session, onBackToMenu, onOpenDeckBuil
           </label>
 
           <div className="saved-item-actions">
-            <button type="button" className="btn" onClick={createRoom} disabled={saving}>
+            <button type="button" className="btn" onClick={createRoom} disabled>
               {saving ? 'Processing...' : 'Create Public Room'}
             </button>
             <button type="button" className="btn" onClick={onOpenDeckBuilder} disabled={saving}>

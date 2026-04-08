@@ -31,6 +31,25 @@ function createDb() {
       UNIQUE(user_id, name),
       FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS notebook_collab_pages (
+      id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      last_editor_user_id TEXT,
+      title TEXT NOT NULL,
+      exercise_snapshot_json TEXT NOT NULL,
+      notebook_state_json TEXT NOT NULL,
+      share_code TEXT NOT NULL UNIQUE,
+      visibility TEXT NOT NULL DEFAULT 'code',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS notebook_collab_pages_owner_idx
+      ON notebook_collab_pages (owner_user_id);
+
+    CREATE INDEX IF NOT EXISTS notebook_collab_pages_updated_idx
+      ON notebook_collab_pages (updated_at DESC);
   `)
 
   return db

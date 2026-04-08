@@ -1,19 +1,6 @@
-import { supabase } from '../lib/supabase'
+import { getAppAccessToken } from '../lib/authClient'
 
-const WHITEBOARD_WORKSPACE_SELECT_FIELDS = [
-  'id',
-  'owner_user_id',
-  'visibility',
-  'source_workspace_id',
-  'exercise_local_id',
-  'exercise_title',
-  'exercise_snapshot',
-  'nodes',
-  'links',
-  'last_editor_user_id',
-  'created_at',
-  'updated_at',
-].join(', ')
+const whiteboardWorkspaceApiBaseUrl = String(import.meta.env.VITE_API_URL || '/api').trim().replace(/\/$/, '')
 
 function normalizeJsonArray(value) {
   return Array.isArray(value) ? value : []
@@ -24,75 +11,90 @@ function normalizeWorkspaceRow(row) {
   return {
     ...row,
     exercise_snapshot: row.exercise_snapshot && typeof row.exercise_snapshot === 'object' ? row.exercise_snapshot : null,
+    notebook_state: row.notebook_state && typeof row.notebook_state === 'object' ? row.notebook_state : null,
     nodes: normalizeJsonArray(row.nodes),
     links: normalizeJsonArray(row.links),
   }
 }
 
-function getSingleWorkspaceRow(rows, emptyMessage) {
-  if (!Array.isArray(rows) || rows.length === 0) {
-    throw new Error(emptyMessage || 'No se encontro la pizarra colaborativa solicitada.')
+async function requestWhiteboardWorkspaceApi(pathname, options = {}, fallbackMessage) {
+  const accessToken = await getAppAccessToken()
+  if (!accessToken) {
+    throw new Error('No active local or Supabase session was found.')
   }
-  return normalizeWorkspaceRow(rows[0])
+
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    ...(options.headers || {}),
+  }
+
+  const response = await fetch(`${whiteboardWorkspaceApiBaseUrl}${pathname}`, {
+    method: options.method || 'GET',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  })
+
+  if (response.status === 204) {
+    return {}
+  }
+
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(body?.error || fallbackMessage)
+  }
+
+  return body
 }
 
-export async function listWhiteboardWorkspaces(ownerUserId) {
-  const { data, error } = await supabase
-    .from('whiteboard_workspaces')
-    .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
-    .eq('owner_user_id', ownerUserId)
-    .order('updated_at', { ascending: false })
+export async function listWhiteboardWorkspaces(_ownerUserId) {
+  const body = await requestWhiteboardWorkspaceApi(
+    '/whiteboard-workspaces',
+    {},
+    'Could not load the synced whiteboards.'
+  )
 
-  if (error) throw error
-  return (Array.isArray(data) ? data : []).map(normalizeWorkspaceRow).filter(Boolean)
+  return (Array.isArray(body?.workspaces) ? body.workspaces : []).map(normalizeWorkspaceRow).filter(Boolean)
 }
 
 export async function listPublicWhiteboardWorkspaces() {
-  const { data, error } = await supabase
-    .from('whiteboard_workspaces')
-    .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
-    .eq('visibility', 'public')
-    .is('source_workspace_id', null)
-    .order('updated_at', { ascending: false })
+  const body = await requestWhiteboardWorkspaceApi(
+    '/whiteboard-workspaces/public',
+    {},
+    'Could not load the public whiteboards.'
+  )
 
-  if (error) throw error
-  return (Array.isArray(data) ? data : []).map(normalizeWorkspaceRow).filter(Boolean)
+  return (Array.isArray(body?.workspaces) ? body.workspaces : []).map(normalizeWorkspaceRow).filter(Boolean)
 }
 
 export async function getWhiteboardWorkspaceById(workspaceId) {
-  const { data, error } = await supabase
-    .from('whiteboard_workspaces')
-    .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
-    .eq('id', workspaceId)
-    .maybeSingle()
+  const body = await requestWhiteboardWorkspaceApi(
+    `/whiteboard-workspaces/${encodeURIComponent(String(workspaceId || '').trim())}`,
+    {},
+    'Could not load the requested whiteboard.'
+  )
 
-  if (error) throw error
-  return normalizeWorkspaceRow(data)
+  return normalizeWorkspaceRow(body?.workspace)
 }
 
-export async function getWhiteboardWorkspaceByExercise(ownerUserId, exerciseLocalId) {
-  const { data, error } = await supabase
-    .from('whiteboard_workspaces')
-    .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
-    .eq('owner_user_id', ownerUserId)
-    .eq('exercise_local_id', exerciseLocalId)
-    .maybeSingle()
+export async function getWhiteboardWorkspaceByExercise(_ownerUserId, exerciseLocalId) {
+  const body = await requestWhiteboardWorkspaceApi(
+    `/whiteboard-workspaces/by-exercise/${encodeURIComponent(String(exerciseLocalId || '').trim())}`,
+    {},
+    'Could not load the requested whiteboard.'
+  )
 
-  if (error) throw error
-  return normalizeWorkspaceRow(data)
+  return normalizeWorkspaceRow(body?.workspace)
 }
 
 export async function getRootWhiteboardWorkspaceByExercise(exerciseLocalId) {
-  const { data, error } = await supabase
-    .from('whiteboard_workspaces')
-    .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
-    .eq('exercise_local_id', exerciseLocalId)
-    .is('source_workspace_id', null)
-    .order('created_at', { ascending: true })
-    .limit(1)
+  const body = await requestWhiteboardWorkspaceApi(
+    `/whiteboard-workspaces/root/${encodeURIComponent(String(exerciseLocalId || '').trim())}`,
+    {},
+    'Could not load the root whiteboard.'
+  )
 
-  if (error) throw error
-  return normalizeWorkspaceRow(Array.isArray(data) ? data[0] : null)
+  return normalizeWorkspaceRow(body?.workspace)
 }
 
 export async function ensureRootWhiteboardWorkspace({
@@ -100,37 +102,32 @@ export async function ensureRootWhiteboardWorkspace({
   exerciseLocalId,
   exerciseTitle,
   exerciseSnapshot,
+  notebookState = null,
   nodes,
   links,
   lastEditorUserId,
   visibility = 'public',
 }) {
-  const existing = await getRootWhiteboardWorkspaceByExercise(exerciseLocalId)
-  if (existing) return existing
-
-  try {
-    const { data, error } = await supabase
-      .from('whiteboard_workspaces')
-      .insert({
-        owner_user_id: ownerUserId,
-        visibility,
-        source_workspace_id: null,
-        exercise_local_id: exerciseLocalId,
-        exercise_title: exerciseTitle,
-        exercise_snapshot: exerciseSnapshot,
+  const body = await requestWhiteboardWorkspaceApi(
+    '/whiteboard-workspaces/ensure-root',
+    {
+      method: 'POST',
+      body: {
+        ownerUserId,
+        exerciseLocalId,
+        exerciseTitle,
+        exerciseSnapshot,
+        notebookState,
         nodes: normalizeJsonArray(nodes),
         links: normalizeJsonArray(links),
-        last_editor_user_id: lastEditorUserId || ownerUserId,
-      })
-      .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
+        lastEditorUserId,
+        visibility,
+      },
+    },
+    'Could not create or recover the root whiteboard.'
+  )
 
-    if (error) throw error
-    return getSingleWorkspaceRow(data, 'No se pudo crear la pizarra raiz del ejercicio.')
-  } catch (error) {
-    const fallback = await getRootWhiteboardWorkspaceByExercise(exerciseLocalId)
-    if (fallback) return fallback
-    throw error
-  }
+  return normalizeWorkspaceRow(body?.workspace)
 }
 
 export async function ensureWhiteboardWorkspace({
@@ -140,50 +137,55 @@ export async function ensureWhiteboardWorkspace({
   exerciseLocalId,
   exerciseTitle,
   exerciseSnapshot,
+  notebookState = null,
   nodes,
   links,
   lastEditorUserId,
 }) {
-  const { data, error } = await supabase
-    .from('whiteboard_workspaces')
-    .upsert({
-      owner_user_id: ownerUserId,
-      visibility,
-      source_workspace_id: sourceWorkspaceId,
-      exercise_local_id: exerciseLocalId,
-      exercise_title: exerciseTitle,
-      exercise_snapshot: exerciseSnapshot,
-      nodes: normalizeJsonArray(nodes),
-      links: normalizeJsonArray(links),
-      last_editor_user_id: lastEditorUserId || ownerUserId,
-    }, {
-      onConflict: 'owner_user_id,exercise_local_id',
-    })
-    .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
+  const body = await requestWhiteboardWorkspaceApi(
+    '/whiteboard-workspaces/ensure',
+    {
+      method: 'POST',
+      body: {
+        ownerUserId,
+        visibility,
+        sourceWorkspaceId,
+        exerciseLocalId,
+        exerciseTitle,
+        exerciseSnapshot,
+        notebookState,
+        nodes: normalizeJsonArray(nodes),
+        links: normalizeJsonArray(links),
+        lastEditorUserId,
+      },
+    },
+    'Could not create or recover the whiteboard.'
+  )
 
-  if (error) throw error
-  return getSingleWorkspaceRow(data, 'No se pudo crear o recuperar la pizarra colaborativa.')
+  return normalizeWorkspaceRow(body?.workspace)
 }
 
 export async function updateWhiteboardWorkspace(workspaceId, ownerUserId, payload) {
-  const { data, error } = await supabase
-    .from('whiteboard_workspaces')
-    .update({
-      visibility: payload.visibility || 'public',
-      exercise_title: payload.exerciseTitle,
-      exercise_snapshot: payload.exerciseSnapshot,
-      nodes: normalizeJsonArray(payload.nodes),
-      links: normalizeJsonArray(payload.links),
-      last_editor_user_id: payload.lastEditorUserId || ownerUserId,
-    })
-    .eq('id', workspaceId)
-    .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
-
-  if (error) throw error
-  return getSingleWorkspaceRow(
-    data,
-    'No tienes permisos para editar esta pizarra colaborativa o ya no existe.'
+  const body = await requestWhiteboardWorkspaceApi(
+    `/whiteboard-workspaces/${encodeURIComponent(String(workspaceId || '').trim())}`,
+    {
+      method: 'PATCH',
+      body: {
+        ownerUserId,
+        clientId: payload.clientId,
+        visibility: payload.visibility || 'public',
+        exerciseTitle: payload.exerciseTitle,
+        exerciseSnapshot: payload.exerciseSnapshot,
+        notebookState: payload.notebookState,
+        nodes: normalizeJsonArray(payload.nodes),
+        links: normalizeJsonArray(payload.links),
+        lastEditorUserId: payload.lastEditorUserId || ownerUserId,
+      },
+    },
+    'Could not update the whiteboard workspace.'
   )
+
+  return normalizeWorkspaceRow(body?.workspace)
 }
 
 export async function cloneWhiteboardWorkspace({
@@ -192,48 +194,51 @@ export async function cloneWhiteboardWorkspace({
   exerciseLocalId,
   exerciseTitle,
   exerciseSnapshot,
+  notebookState = null,
   nodes,
   links,
   visibility = 'private',
   lastEditorUserId,
 }) {
-  const { data, error } = await supabase
-    .from('whiteboard_workspaces')
-    .insert({
-      owner_user_id: ownerUserId,
-      source_workspace_id: sourceWorkspaceId,
-      visibility,
-      exercise_local_id: exerciseLocalId,
-      exercise_title: exerciseTitle,
-      exercise_snapshot: exerciseSnapshot,
-      nodes: normalizeJsonArray(nodes),
-      links: normalizeJsonArray(links),
-      last_editor_user_id: lastEditorUserId || ownerUserId,
-    })
-    .select(WHITEBOARD_WORKSPACE_SELECT_FIELDS)
+  const body = await requestWhiteboardWorkspaceApi(
+    '/whiteboard-workspaces/clone',
+    {
+      method: 'POST',
+      body: {
+        ownerUserId,
+        sourceWorkspaceId,
+        exerciseLocalId,
+        exerciseTitle,
+        exerciseSnapshot,
+        notebookState,
+        nodes: normalizeJsonArray(nodes),
+        links: normalizeJsonArray(links),
+        visibility,
+        lastEditorUserId,
+      },
+    },
+    'Could not clone the whiteboard.'
+  )
 
-  if (error) throw error
-  return getSingleWorkspaceRow(data, 'No se pudo clonar la pizarra colaborativa.')
+  return normalizeWorkspaceRow(body?.workspace)
 }
 
-export async function deleteWhiteboardWorkspace(workspaceId, ownerUserId) {
-  const { error } = await supabase
-    .from('whiteboard_workspaces')
-    .delete()
-    .eq('id', workspaceId)
-    .eq('owner_user_id', ownerUserId)
+export async function deleteWhiteboardWorkspace(workspaceId, _ownerUserId) {
+  await requestWhiteboardWorkspaceApi(
+    `/whiteboard-workspaces/${encodeURIComponent(String(workspaceId || '').trim())}`,
+    { method: 'DELETE' },
+    'Could not delete the whiteboard.'
+  )
 
-  if (error) throw error
   return true
 }
 
-export async function deleteWhiteboardWorkspaceByExercise(ownerUserId, exerciseLocalId) {
-  const { error } = await supabase
-    .from('whiteboard_workspaces')
-    .delete()
-    .eq('owner_user_id', ownerUserId)
-    .eq('exercise_local_id', exerciseLocalId)
+export async function deleteWhiteboardWorkspaceByExercise(_ownerUserId, exerciseLocalId) {
+  await requestWhiteboardWorkspaceApi(
+    `/whiteboard-workspaces/by-exercise/${encodeURIComponent(String(exerciseLocalId || '').trim())}`,
+    { method: 'DELETE' },
+    'Could not delete the whiteboard exercise.'
+  )
 
-  if (error) throw error
   return true
 }
